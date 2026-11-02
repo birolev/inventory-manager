@@ -311,7 +311,9 @@ Deno.serve(async (request) => {
 
     const result = await analyzeWithFallback(makePrompt(task), imageBase64, mimeType);
     if (!result.ok) return jsonResponse(result, 503);
-    return jsonResponse(result.result);
+    // Keep the original result fields at the top level so older app builds
+    // continue to read the response, while exposing the winning model.
+    return jsonResponse({ ...result.result, _model: result.model });
   } catch (error) {
     console.error("Gemini vision function error", error);
     return jsonResponse({ error: "Could not analyze image" }, 500);

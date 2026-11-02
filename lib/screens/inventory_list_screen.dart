@@ -126,7 +126,10 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       if (response.status != 200) {
         throw Exception('Image analysis failed: ${response.data}');
       }
-      final criteria = Map<String, dynamic>.from(response.data as Map);
+      final responseData = Map<String, dynamic>.from(response.data as Map);
+      final criteria = responseData['result'] is Map
+          ? Map<String, dynamic>.from(responseData['result'] as Map)
+          : responseData;
       if (!mounted) return;
       final category = _normalizeOption(
         criteria['category'],

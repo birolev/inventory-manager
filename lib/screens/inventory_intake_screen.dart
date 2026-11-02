@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -141,7 +142,22 @@ class _InventoryScreenState extends State<InventoryScreen> {
           'mimeType': 'image/jpeg',
         },
       );
-      item.aiResult = Map<String, dynamic>.from(result.data as Map);
+      final responseData = Map<String, dynamic>.from(result.data as Map);
+      if (responseData['result'] is Map) {
+        item.aiResult = Map<String, dynamic>.from(
+          responseData['result'] as Map,
+        );
+        item.aiModel = responseData['model']?.toString();
+      } else {
+        // Continue to accept results from an Edge Function that has not yet
+        // been redeployed with model metadata.
+        item.aiModel =
+            responseData['_model']?.toString() ??
+            responseData['model']?.toString();
+        item.aiResult = Map<String, dynamic>.from(responseData)
+          ..remove('_model')
+          ..remove('model');
+      }
     } catch (e) {
       _showSnackBar('AI Error on an image: $e', isError: true);
       // Even if it fails, mark as ready so user can manually fill it out
@@ -194,6 +210,78 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   // --- Uploading and Queue Management ---
 
+  Map<String, dynamic> _aiValuesForReview(QueueItem item) {
+    final result = item.aiResult;
+    if (result == null) return {};
+
+    const fields = [
+      'name',
+      'brand',
+      'price',
+      'category',
+      'gender',
+      'color',
+      'pattern',
+      'size',
+      'condition',
+    ];
+    return {
+      for (final field in fields)
+        if (result.containsKey(field) && result[field] != null)
+          field: result[field],
+    };
+  }
+
+  Map<String, dynamic> _finalValuesForReview() => {
+    'name': _nameController.text,
+    'brand': _brandController.text,
+    'price': double.tryParse(_priceController.text) ?? 0.0,
+    'category': _selectedCategory,
+    'gender': _selectedGender,
+    'color': _colorController.text,
+    'pattern': _patternController.text,
+    'size': _sizeController.text,
+    'condition': _conditionController.text,
+  };
+
+  bool _auditValuesDiffer(String field, dynamic aiValue, dynamic finalValue) {
+    if (field == 'price') {
+      final aiPrice = double.tryParse(aiValue.toString());
+      final finalPrice = double.tryParse(finalValue.toString());
+      return aiPrice != finalPrice;
+    }
+    return aiValue?.toString().trim().toLowerCase() !=
+        finalValue?.toString().trim().toLowerCase();
+  }
+
+  Future<void> _writeAiIntakeReview({
+    required dynamic inventoryId,
+    required QueueItem item,
+    required Map<String, dynamic> aiValues,
+    required Map<String, dynamic> finalValues,
+  }) async {
+    try {
+      final changedFields = aiValues.keys
+          .where(
+            (field) =>
+                _auditValuesDiffer(field, aiValues[field], finalValues[field]),
+          )
+          .toList();
+      await Supabase.instance.client.from('ai_intake_reviews').insert({
+        'inventory_id': inventoryId,
+        'model': item.aiModel,
+        'ai_values': aiValues,
+        'final_values': {
+          for (final field in aiValues.keys) field: finalValues[field],
+        },
+        'changed_fields': changedFields,
+      });
+    } catch (error) {
+      // Audit logging is best effort and must not interrupt an inventory save.
+      debugPrint('Could not record AI intake review: $error');
+    }
+  }
+
   Future<void> _finalUpload() async {
     if (_queue == null) return;
     setState(() => _isUploading = true);
@@ -211,20 +299,37 @@ class _InventoryScreenState extends State<InventoryScreen> {
           .from('clothes-images')
           .getPublicUrl(fileName);
 
-      await Supabase.instance.client.from('inventory').insert({
-        'name': _nameController.text,
-        'brand': _brandController.text,
-        'price_est': double.tryParse(_priceController.text) ?? 0.0,
-        'category': _selectedCategory,
-        'gender': _selectedGender,
-        'location': _selectedLocation,
-        'image_url': imageUrl,
-        'color': _colorController.text,
-        'pattern': _patternController.text,
-        'size': _sizeController.text,
-        'condition': _conditionController.text,
-        'is_sold': false,
-      });
+      final aiValues = _aiValuesForReview(currentItem);
+      final finalValues = _finalValuesForReview();
+      final insertedItem = await Supabase.instance.client
+          .from('inventory')
+          .insert({
+            'name': _nameController.text,
+            'brand': _brandController.text,
+            'price_est': double.tryParse(_priceController.text) ?? 0.0,
+            'category': _selectedCategory,
+            'gender': _selectedGender,
+            'location': _selectedLocation,
+            'image_url': imageUrl,
+            'color': _colorController.text,
+            'pattern': _patternController.text,
+            'size': _sizeController.text,
+            'condition': _conditionController.text,
+            'is_sold': false,
+          })
+          .select('id')
+          .single();
+
+      if (currentItem.aiModel != null && aiValues.isNotEmpty) {
+        unawaited(
+          _writeAiIntakeReview(
+            inventoryId: insertedItem['id'],
+            item: currentItem,
+            aiValues: aiValues,
+            finalValues: finalValues,
+          ),
+        );
+      }
 
       _showSnackBar('Item successfully saved to inventory!');
       _moveToNextItemInQueue();

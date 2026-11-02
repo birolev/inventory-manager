@@ -7,6 +7,7 @@ class QueueItem{
   final XFile image;
   late final Future<Uint8List> bytes;
   Map<String, dynamic>? aiResult;
+  String? aiModel;
   
   bool isAnalyzing = false;
   bool isReady = false;
