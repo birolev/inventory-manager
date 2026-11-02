@@ -465,8 +465,9 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                           )
                           .toList(),
                       onChanged: (value) {
-                        if (value != null)
+                        if (value != null) {
                           setDialogState(() => location = value);
+                        }
                       },
                     ),
                     const SizedBox(height: 12),

@@ -1020,8 +1020,8 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                                             right: 4,
                                             top: 4,
                                             child: Material(
-                                              color: Colors.white.withOpacity(
-                                                0.9,
+                                              color: Colors.white.withValues(
+                                                alpha: 0.9,
                                               ),
                                               shape: const CircleBorder(),
                                               child: IconButton(
