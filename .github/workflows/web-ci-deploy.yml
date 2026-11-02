@@ -8,14 +8,49 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: web-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-test-web:
-    name: Build and test web
+  changes:
+    name: Detect relevant changes
+    runs-on: ubuntu-latest
+    outputs:
+      quality: ${{ steps.filter.outputs.quality }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            quality:
+              - 'lib/**'
+              - 'test/**'
+              - 'pubspec.yaml'
+              - 'pubspec.lock'
+              - 'analysis_options.yaml'
+              - '.github/workflows/**'
+            web:
+              - 'lib/**'
+              - 'web/**'
+              - 'pubspec.yaml'
+              - 'pubspec.lock'
+              - 'supabase.env'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.netlify/**'
+
+  quality:
+    name: Analyze and test Flutter
+    needs: changes
+    if: needs.changes.outputs.quality == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -36,6 +71,25 @@ jobs:
 
       - name: Run Flutter tests
         run: flutter test
+
+  build-deploy-web:
+    name: Build and deploy web
+    needs: [changes, quality]
+    if: ${{ always() && !cancelled() && needs.changes.outputs.web == 'true' && needs.quality.result != 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.7
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
 
       - name: Build web release
         run: flutter build web --release

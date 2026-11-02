@@ -1,36 +1,22 @@
 # Secondhand Inventory & Sales Manager
 
-A Flutter application for managing the day-to-day operations of a secondhand clothing business. It brings AI-assisted intake, inventory search, sales recording, and reporting into one workflow.
+A Flutter application for managing inventory and sales at a secondhand clothing business. It is used in day-to-day operations across multiple store locations.
 
-**In daily use, managing approximately 2,000 clothing items across multiple store locations.**
+## Technical highlights
 
-<!-- Add a product preview here when screenshots or a demo are available. -->
+- **AI image analysis:** Supabase Edge Functions call Gemini and OpenAI vision APIs to generate structured clothing details and image-search criteria. Provider credentials stay server-side.
+- **Resilient model orchestration:** Retry with exponential backoff for transient errors, fallback across providers and models, request timeouts, and a database-backed circuit breaker with a local fallback state.
+- **Reviewable AI output:** Intake suggestions can be edited before saving; suggested and final values are recorded for later accuracy analysis.
+- **Supabase backend:** PostgreSQL migrations define inventory, sales, model health, and AI review data. Supabase Auth handles access, Storage holds item images, and database RPCs support transactional sales operations.
+- **Shared inventory querying:** A reusable Dart search service applies consistent filters and pagination across inventory workflows, including broader fallback searches.
 
-## What it does
+## CI/CD
 
-### AI-assisted intake
+GitHub Actions runs for pull requests targeting `main` and pushes to `main`. A path filter skips Flutter checks for documentation-only changes. Flutter analysis and tests run when app or test code changes; the web release is built and deployed only when web-app inputs change. Same-repository pull requests deploy a Netlify preview, while pushes to `main` deploy to production. Deployment waits for applicable quality checks, and Netlify credentials are supplied through GitHub Secrets.
 
-Staff can photograph one or multiple items and receive suggested product details, including brand, category, color, pattern, size, condition, and estimated price. Suggestions can be reviewed and edited before saving. If an AI provider is temporarily unavailable, the backend retries transient failures and can fall back to another model. Intake corrections are recorded for later accuracy analysis.
+## Technology
 
-### Inventory operations
-
-Browse, filter, sort, and edit the inventory; search by text or photo; track item locations and sale status; and add an item directly to a sale. Shared inventory search logic keeps results consistent across inventory, search, and sales workflows.
-
-### Sales and reporting
-
-Record sales with item-level prices, payment method, date, location, and notes. Review daily and monthly performance, update or remove sale records, and copy daily summaries for reporting.
-
-### Access and data
-
-Supabase Auth provides sign-in. PostgreSQL stores inventory and sales data, while Supabase Storage holds item photos. Sensitive AI provider calls run in Supabase Edge Functions rather than exposing provider credentials in the Flutter client.
-
-## Built with
-
-| Area | Technologies |
-| --- | --- |
-| Client | Flutter, Dart |
-| Backend | Supabase Auth, PostgreSQL, Storage, Edge Functions |
-| AI | Gemini and OpenAI vision models with retry and fallback handling |
+Flutter, Dart, Supabase Auth, PostgreSQL, Supabase Storage, Supabase Edge Functions, TypeScript/Deno, Gemini Vision, OpenAI Vision, GitHub Actions, Netlify
 
 ## Platforms
 
