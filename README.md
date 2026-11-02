@@ -1,33 +1,37 @@
 # Secondhand Inventory & Sales Manager
 
-A cross-platform inventory and sales app for a secondhand clothing business. It combines AI-assisted item intake, searchable stock management, and sales reporting in one workflow.
+A Flutter application for managing the day-to-day operations of a secondhand clothing business. It brings AI-assisted intake, inventory search, sales recording, and reporting into one workflow.
 
-**Status:** Active development · MVP
+**In daily use, managing approximately 2,000 clothing items across multiple store locations.**
 
-<!-- Add a short demo or product screenshots here. -->
+<!-- Add a product preview here when screenshots or a demo are available. -->
 
-## Overview
+## What it does
 
-Staff can photograph new items and use Gemini to suggest product details and an estimated price. Suggestions stay editable for review before an item is saved. The same inventory can then be searched, updated, and added to recorded sales across store locations.
+### AI-assisted intake
 
-## Key Features
+Staff can photograph one or multiple items and receive suggested product details, including brand, category, color, pattern, size, condition, and estimated price. Suggestions can be reviewed and edited before saving. If an AI provider is temporarily unavailable, the backend retries transient failures and can fall back to another model. Intake corrections are recorded for later accuracy analysis.
 
-- **AI-assisted intake:** Analyze single or multiple item photos and prefill details such as category, brand, color, pattern, and estimated price.
-- **Inventory management:** Browse, search, filter, edit, and track items across locations. Photo search uses the same inventory matching flow.
-- **Sales recording:** Add inventory items to a sale, adjust sale prices, and record payment method, date, location, and notes.
-- **Sales reporting:** Review daily and monthly totals, edit or delete sale records, and copy a daily sales summary.
-- **Authenticated access:** Sign-in and password setup backed by Supabase Auth.
+### Inventory operations
 
-## Technology
+Browse, filter, sort, and edit the inventory; search by text or photo; track item locations and sale status; and add an item directly to a sale. Shared inventory search logic keeps results consistent across inventory, search, and sales workflows.
 
-| Area | Tools |
+### Sales and reporting
+
+Record sales with item-level prices, payment method, date, location, and notes. Review daily and monthly performance, update or remove sale records, and copy daily summaries for reporting.
+
+### Access and data
+
+Supabase Auth provides sign-in. PostgreSQL stores inventory and sales data, while Supabase Storage holds item photos. Sensitive AI provider calls run in Supabase Edge Functions rather than exposing provider credentials in the Flutter client.
+
+## Built with
+
+| Area | Technologies |
 | --- | --- |
-| App | Flutter, Dart |
-| Backend | Supabase Auth, PostgreSQL, Storage, and Edge Functions |
-| Image analysis | Google Gemini API |
-
-Gemini requests run through a Supabase Edge Function, keeping the provider credential out of the client app.
+| Client | Flutter, Dart |
+| Backend | Supabase Auth, PostgreSQL, Storage, Edge Functions |
+| AI | Gemini and OpenAI vision models with retry and fallback handling |
 
 ## Platforms
 
-Android and Web builds.
+Android and Web
