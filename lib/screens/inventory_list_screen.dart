@@ -20,7 +20,7 @@ class InventoryListScreen extends StatefulWidget {
 class _InventoryListScreenState extends State<InventoryListScreen> {
   List<dynamic> _inventory = [];
   bool _isLoading = true;
-  bool _filtersExpanded = true;
+  bool _filtersExpanded = false;
 
   String _selectedFilter = 'Minden';
   String _selectedGenderFilter = 'Minden';
@@ -108,7 +108,8 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
         _usedFallback = false;
       });
       final bytes = await photo.readAsBytes();
-      final imageMimeType = photo.mimeType ??
+      final imageMimeType =
+          photo.mimeType ??
           (photo.name.toLowerCase().endsWith('.png')
               ? 'image/png'
               : photo.name.toLowerCase().endsWith('.webp')
@@ -148,9 +149,9 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       await _fetchInventory(broadenIfEmpty: true);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Photo search failed: $error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Photo search failed: $error')));
       }
     } finally {
       if (mounted) setState(() => _isAnalyzingPhoto = false);
@@ -179,9 +180,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   Future<void> _addToSale(Map<String, dynamic> item) async {
     final recorded = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(
-        builder: (_) => SalesScreen(initialItems: [item]),
-      ),
+      MaterialPageRoute(builder: (_) => SalesScreen(initialItems: [item])),
     );
     if (recorded == true) _fetchInventory();
   }
@@ -600,497 +599,528 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     // Paste the unchanged build() implementation from your original file here.
     // We couldn't fit it into chat due to response size limits.
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Készlet (Inventory)'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          PopupMenuButton<ImageSource>(
-            tooltip: 'Search by photo',
-            icon: _isAnalyzingPhoto
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.image_search),
-            onSelected: _searchByPhoto,
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: ImageSource.gallery,
-                child: Text('Choose photo'),
+      body: NestedScrollView(
+        floatHeaderSlivers: true,
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          SliverAppBar(
+            floating: true,
+            snap: true,
+            title: const Text('Készlet (Inventory)'),
+            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            actions: [
+              PopupMenuButton<ImageSource>(
+                tooltip: 'Search by photo',
+                icon: _isAnalyzingPhoto
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.image_search),
+                onSelected: _searchByPhoto,
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: ImageSource.gallery,
+                    child: Text('Choose photo'),
+                  ),
+                  PopupMenuItem(
+                    value: ImageSource.camera,
+                    child: Text('Take photo'),
+                  ),
+                ],
               ),
-              PopupMenuItem(
-                value: ImageSource.camera,
-                child: Text('Take photo'),
+              IconButton(
+                tooltip: 'Record sale',
+                icon: const Icon(Icons.point_of_sale),
+                onPressed: () async {
+                  final recorded = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SalesScreen()),
+                  );
+                  if (recorded == true) _fetchInventory();
+                },
               ),
-            ],
-          ),
-          IconButton(
-            tooltip: 'Record sale',
-            icon: const Icon(Icons.point_of_sale),
-            onPressed: () async {
-              final recorded = await Navigator.push<bool>(
-                context,
-                MaterialPageRoute(builder: (_) => const SalesScreen()),
-              );
-              if (recorded == true) _fetchInventory();
-            },
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.sort),
-            tooltip: 'Rendezés (Sort)',
-            onSelected: (String result) {
-              setState(() {
-                if (result == 'newest') {
-                  _sortColumn = 'created_at';
-                  _sortAscending = false;
-                } else if (result == 'oldest') {
-                  _sortColumn = 'created_at';
-                  _sortAscending = true;
-                } else if (result == 'price_low') {
-                  _sortColumn = 'price_est';
-                  _sortAscending = true;
-                } else if (result == 'price_high') {
-                  _sortColumn = 'price_est';
-                  _sortAscending = false;
-                }
-              });
-              _fetchInventory();
-            },
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-              const PopupMenuItem<String>(
-                value: 'newest',
-                child: Text('Legújabb elöl (Newest)'),
-              ),
-              const PopupMenuItem<String>(
-                value: 'oldest',
-                child: Text('Legrégebbi elöl (Oldest)'),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem<String>(
-                value: 'price_low',
-                child: Text('Legolcsóbb elöl (Price: Low-High)'),
-              ),
-              const PopupMenuItem<String>(
-                value: 'price_high',
-                child: Text('Legdrágább elöl (Price: High-Low)'),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.sort),
+                tooltip: 'Rendezés (Sort)',
+                onSelected: (String result) {
+                  setState(() {
+                    if (result == 'newest') {
+                      _sortColumn = 'created_at';
+                      _sortAscending = false;
+                    } else if (result == 'oldest') {
+                      _sortColumn = 'created_at';
+                      _sortAscending = true;
+                    } else if (result == 'price_low') {
+                      _sortColumn = 'price_est';
+                      _sortAscending = true;
+                    } else if (result == 'price_high') {
+                      _sortColumn = 'price_est';
+                      _sortAscending = false;
+                    }
+                  });
+                  _fetchInventory();
+                },
+                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                  const PopupMenuItem<String>(
+                    value: 'newest',
+                    child: Text('Legújabb elöl (Newest)'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'oldest',
+                    child: Text('Legrégebbi elöl (Oldest)'),
+                  ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem<String>(
+                    value: 'price_low',
+                    child: Text('Legolcsóbb elöl (Price: Low-High)'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'price_high',
+                    child: Text('Legdrágább elöl (Price: High-Low)'),
+                  ),
+                ],
               ),
             ],
           ),
         ],
-      ),
-      backgroundColor: Colors.grey[100],
-      body: LayoutBuilder(
-        builder: (context, constraints) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // --- THE FILTER MENU ---
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: constraints.maxHeight * 0.48,
-              ),
-              child: SingleChildScrollView(
-                child: Container(
-                  color: Colors.white,
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              'Inventory filters',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          TextButton.icon(
-                            onPressed: () => setState(
-                              () => _filtersExpanded = !_filtersExpanded,
-                            ),
-                            icon: Icon(
-                              _filtersExpanded ? Icons.expand_less : Icons.tune,
-                            ),
-                            label: Text(_filtersExpanded ? 'Hide' : 'Edit'),
-                          ),
-                        ],
-                      ),
-                      if (_filtersExpanded) ...[
-                        if (_searchImage != null)
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: ClipRRect(
-                              borderRadius: BorderRadius.circular(6),
-                              child: Image.file(
-                                _searchImage!,
-                                width: 48,
-                                height: 48,
-                                fit: BoxFit.cover,
+        body: LayoutBuilder(
+          builder: (context, constraints) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // --- THE FILTER MENU ---
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: constraints.maxHeight * 0.48,
+                ),
+                child: SingleChildScrollView(
+                  child: Container(
+                    color: Colors.white,
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Inventory filters',
+                                style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                             ),
-                            title: const Text('Photo search'),
-                            subtitle: Text(
-                              _isAnalyzingPhoto
-                                  ? 'Analyzing photo…'
-                                  : 'Filters filled from this photo',
+                            TextButton.icon(
+                              onPressed: () => setState(
+                                () => _filtersExpanded = !_filtersExpanded,
+                              ),
+                              icon: Icon(
+                                _filtersExpanded
+                                    ? Icons.expand_less
+                                    : Icons.tune,
+                              ),
+                              label: Text(_filtersExpanded ? 'Hide' : 'Edit'),
                             ),
-                            trailing: IconButton(
-                              tooltip: 'Clear photo',
-                              icon: const Icon(Icons.close),
-                              onPressed: () => setState(() => _searchImage = null),
+                          ],
+                        ),
+                        if (_filtersExpanded) ...[
+                          if (_searchImage != null)
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: Image.file(
+                                  _searchImage!,
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              title: const Text('Photo search'),
+                              subtitle: Text(
+                                _isAnalyzingPhoto
+                                    ? 'Analyzing photo…'
+                                    : 'Filters filled from this photo',
+                              ),
+                              trailing: IconButton(
+                                tooltip: 'Clear photo',
+                                icon: const Icon(Icons.close),
+                                onPressed: () =>
+                                    setState(() => _searchImage = null),
+                              ),
                             ),
-                          ),
-                        InkWell(
-                          borderRadius: BorderRadius.circular(4),
-                          onTap: () async {
-                            final category = await _chooseCategory();
-                            if (category == null || !mounted) return;
-                            setState(() => _selectedFilter = category);
-                            _fetchInventory();
-                          },
-                          child: InputDecorator(
-                            decoration: const InputDecoration(
-                              labelText: 'Category',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.category),
-                              suffixIcon: Icon(Icons.arrow_drop_down),
-                              isDense: true,
-                            ),
-                            child: Text(_selectedFilter),
-                          ),
-                        ),
-                        SizedBox(
-                          height: 56,
-                          child: ListView(
-                            scrollDirection: Axis.horizontal,
-                            children: ['Minden', ...genderOptions].map((
-                              gender,
-                            ) {
-                              return Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: ChoiceChip(
-                                  label: Text(gender),
-                                  selected: gender == _selectedGenderFilter,
-                                  onSelected: (_) {
-                                    setState(
-                                      () => _selectedGenderFilter = gender,
-                                    );
-                                    _fetchInventory();
-                                  },
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                        SizedBox(
-                          height: 48,
-                          child: ListView(
-                            scrollDirection: Axis.horizontal,
-                            children: ['All locations', ..._locations].map((
-                              location,
-                            ) {
-                              return Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: ChoiceChip(
-                                  label: Text(location),
-                                  selected: location == _selectedLocationFilter,
-                                  onSelected: (_) {
-                                    setState(
-                                      () => _selectedLocationFilter = location,
-                                    );
-                                    _fetchInventory();
-                                  },
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                        SizedBox(
-                          height: 56,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: TextField(
-                              controller: _sizeFilterController,
-                              textInputAction: TextInputAction.search,
-                              onSubmitted: (value) {
-                                setState(
-                                  () => _selectedSizeFilter = value.trim(),
-                                );
-                                _fetchInventory();
-                              },
-                              decoration: InputDecoration(
-                                labelText: 'Filter by size',
-                                hintText: 'e.g. M, 32, 42',
-                                prefixIcon: const Icon(Icons.straighten),
-                                suffixIcon: IconButton(
-                                  tooltip: 'Apply size filter',
-                                  icon: const Icon(Icons.search),
-                                  onPressed: () {
-                                    setState(
-                                      () => _selectedSizeFilter =
-                                          _sizeFilterController.text.trim(),
-                                    );
-                                    _fetchInventory();
-                                  },
-                                ),
-                                border: const OutlineInputBorder(),
+                          InkWell(
+                            borderRadius: BorderRadius.circular(4),
+                            onTap: () async {
+                              final category = await _chooseCategory();
+                              if (category == null || !mounted) return;
+                              setState(() => _selectedFilter = category);
+                              _fetchInventory();
+                            },
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Category',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.category),
+                                suffixIcon: Icon(Icons.arrow_drop_down),
                                 isDense: true,
                               ),
+                              child: Text(_selectedFilter),
                             ),
                           ),
-                        ),
-                        SizedBox(
-                          height: 56,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: TextField(
-                              controller: _brandFilterController,
-                              textInputAction: TextInputAction.search,
-                              onSubmitted: (value) {
-                                setState(
-                                  () => _selectedBrandFilter = value.trim(),
+                          SizedBox(
+                            height: 56,
+                            child: ListView(
+                              scrollDirection: Axis.horizontal,
+                              children: ['Minden', ...genderOptions].map((
+                                gender,
+                              ) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: ChoiceChip(
+                                    label: Text(gender),
+                                    selected: gender == _selectedGenderFilter,
+                                    onSelected: (_) {
+                                      setState(
+                                        () => _selectedGenderFilter = gender,
+                                      );
+                                      _fetchInventory();
+                                    },
+                                  ),
                                 );
-                                _fetchInventory();
-                              },
-                              decoration: InputDecoration(
-                                labelText: 'Filter by brand',
-                                hintText: 'e.g. Nike',
-                                prefixIcon: const Icon(
-                                  Icons.branding_watermark,
-                                ),
-                                suffixIcon: IconButton(
-                                  tooltip: 'Apply brand filter',
-                                  icon: const Icon(Icons.search),
-                                  onPressed: () {
-                                    setState(
-                                      () => _selectedBrandFilter =
-                                          _brandFilterController.text.trim(),
-                                    );
-                                    _fetchInventory();
-                                  },
-                                ),
-                                border: const OutlineInputBorder(),
-                                isDense: true,
-                              ),
+                              }).toList(),
                             ),
                           ),
-                        ),
-                        SizedBox(
-                          height: 56,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: TextField(
-                              controller: _colorFilterController,
-                              textInputAction: TextInputAction.search,
-                              onSubmitted: (value) {
-                                setState(
-                                  () => _selectedColorFilter = value.trim(),
+                          SizedBox(
+                            height: 48,
+                            child: ListView(
+                              scrollDirection: Axis.horizontal,
+                              children: ['All locations', ..._locations].map((
+                                location,
+                              ) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: ChoiceChip(
+                                    label: Text(location),
+                                    selected:
+                                        location == _selectedLocationFilter,
+                                    onSelected: (_) {
+                                      setState(
+                                        () =>
+                                            _selectedLocationFilter = location,
+                                      );
+                                      _fetchInventory();
+                                    },
+                                  ),
                                 );
-                                _fetchInventory();
-                              },
-                              decoration: InputDecoration(
-                                labelText: 'Filter by color',
-                                hintText:
-                                    'e.g. kék (all shades), pink, magenta',
-                                prefixIcon: const Icon(Icons.color_lens),
-                                suffixIcon: IconButton(
-                                  tooltip: 'Apply color filter',
-                                  icon: const Icon(Icons.search),
-                                  onPressed: () {
-                                    setState(
-                                      () => _selectedColorFilter =
-                                          _colorFilterController.text.trim(),
-                                    );
-                                    _fetchInventory();
-                                  },
+                              }).toList(),
+                            ),
+                          ),
+                          SizedBox(
+                            height: 56,
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: TextField(
+                                controller: _sizeFilterController,
+                                textInputAction: TextInputAction.search,
+                                onSubmitted: (value) {
+                                  setState(
+                                    () => _selectedSizeFilter = value.trim(),
+                                  );
+                                  _fetchInventory();
+                                },
+                                decoration: InputDecoration(
+                                  labelText: 'Filter by size',
+                                  hintText: 'e.g. M, 32, 42',
+                                  prefixIcon: const Icon(Icons.straighten),
+                                  suffixIcon: IconButton(
+                                    tooltip: 'Apply size filter',
+                                    icon: const Icon(Icons.search),
+                                    onPressed: () {
+                                      setState(
+                                        () => _selectedSizeFilter =
+                                            _sizeFilterController.text.trim(),
+                                      );
+                                      _fetchInventory();
+                                    },
+                                  ),
+                                  border: const OutlineInputBorder(),
+                                  isDense: true,
                                 ),
-                                border: const OutlineInputBorder(),
-                                isDense: true,
                               ),
                             ),
                           ),
-                        ),
-                      ] else
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Text(
-                              'Category: $_selectedFilter · Gender: $_selectedGenderFilter · '
-                              'Location: $_selectedLocationFilter'
-                              '${_selectedSizeFilter.isEmpty ? '' : ' · Size: $_selectedSizeFilter'}'
-                              '${_selectedBrandFilter.isEmpty ? '' : ' · Brand: $_selectedBrandFilter'}'
-                              '${_selectedColorFilter.isEmpty ? '' : ' · Color: $_selectedColorFilter'}',
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.blueGrey,
+                          SizedBox(
+                            height: 56,
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: TextField(
+                                controller: _brandFilterController,
+                                textInputAction: TextInputAction.search,
+                                onSubmitted: (value) {
+                                  setState(
+                                    () => _selectedBrandFilter = value.trim(),
+                                  );
+                                  _fetchInventory();
+                                },
+                                decoration: InputDecoration(
+                                  labelText: 'Filter by brand',
+                                  hintText: 'e.g. Nike',
+                                  prefixIcon: const Icon(
+                                    Icons.branding_watermark,
+                                  ),
+                                  suffixIcon: IconButton(
+                                    tooltip: 'Apply brand filter',
+                                    icon: const Icon(Icons.search),
+                                    onPressed: () {
+                                      setState(
+                                        () => _selectedBrandFilter =
+                                            _brandFilterController.text.trim(),
+                                      );
+                                      _fetchInventory();
+                                    },
+                                  ),
+                                  border: const OutlineInputBorder(),
+                                  isDense: true,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                    ],
+                          SizedBox(
+                            height: 56,
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: TextField(
+                                controller: _colorFilterController,
+                                textInputAction: TextInputAction.search,
+                                onSubmitted: (value) {
+                                  setState(
+                                    () => _selectedColorFilter = value.trim(),
+                                  );
+                                  _fetchInventory();
+                                },
+                                decoration: InputDecoration(
+                                  labelText: 'Filter by color',
+                                  hintText:
+                                      'e.g. kék (all shades), pink, magenta',
+                                  prefixIcon: const Icon(Icons.color_lens),
+                                  suffixIcon: IconButton(
+                                    tooltip: 'Apply color filter',
+                                    icon: const Icon(Icons.search),
+                                    onPressed: () {
+                                      setState(
+                                        () => _selectedColorFilter =
+                                            _colorFilterController.text.trim(),
+                                      );
+                                      _fetchInventory();
+                                    },
+                                  ),
+                                  border: const OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ] else
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                'Category: $_selectedFilter · Gender: $_selectedGenderFilter · '
+                                'Location: $_selectedLocationFilter'
+                                '${_selectedSizeFilter.isEmpty ? '' : ' · Size: $_selectedSizeFilter'}'
+                                '${_selectedBrandFilter.isEmpty ? '' : ' · Brand: $_selectedBrandFilter'}'
+                                '${_selectedColorFilter.isEmpty ? '' : ' · Color: $_selectedColorFilter'}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.blueGrey,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
 
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Showing ${_inventory.length} items${_usedFallback ? ' · broader photo matches' : ''}',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Showing ${_inventory.length} items${_usedFallback ? ' · broader photo matches' : ''}',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
-            ),
 
-            // --- THE GRID VIEW ---
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _inventory.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'Nincs találat (No items found)',
-                        style: TextStyle(fontSize: 18, color: Colors.grey),
-                      ),
-                    )
-                  : GridView.builder(
-                      padding: const EdgeInsets.all(10),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            childAspectRatio: 0.7,
-                            crossAxisSpacing: 10,
-                            mainAxisSpacing: 10,
-                          ),
-                      itemCount: _inventory.length,
-                      itemBuilder: (context, index) {
-                        final item = _inventory[index];
-
-                        // --- NEW: INKWELL MAKES THE CARD TAPPABLE ---
-                        return InkWell(
-                          onTap: () => _showEditSheet(item), // Opens the menu!
-                          borderRadius: BorderRadius.circular(12),
-                          child: Card(
-                            clipBehavior: Clip.antiAlias,
-                            elevation: 2,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+              // --- THE GRID VIEW ---
+              Expanded(
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _inventory.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'Nincs találat (No items found)',
+                          style: TextStyle(fontSize: 18, color: Colors.grey),
+                        ),
+                      )
+                    : GridView.builder(
+                        padding: const EdgeInsets.all(10),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              childAspectRatio: 0.7,
+                              crossAxisSpacing: 10,
+                              mainAxisSpacing: 10,
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      Container(
-                                        color: Colors.grey[200],
-                                        child: item['image_url'] != null
-                                            ? Image.network(
-                                                item['image_url'],
-                                                fit: BoxFit.cover,
-                                              )
-                                            : const Icon(
-                                                Icons.image_not_supported,
-                                                color: Colors.grey,
+                        itemCount: _inventory.length,
+                        itemBuilder: (context, index) {
+                          final item = _inventory[index];
+
+                          // --- NEW: INKWELL MAKES THE CARD TAPPABLE ---
+                          return InkWell(
+                            onTap: () =>
+                                _showEditSheet(item), // Opens the menu!
+                            borderRadius: BorderRadius.circular(12),
+                            child: Card(
+                              clipBehavior: Clip.antiAlias,
+                              elevation: 2,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        Container(
+                                          color: Colors.grey[200],
+                                          child: item['image_url'] != null
+                                              ? Image.network(
+                                                  item['image_url'],
+                                                  fit: BoxFit.cover,
+                                                )
+                                              : const Icon(
+                                                  Icons.image_not_supported,
+                                                  color: Colors.grey,
+                                                ),
+                                        ),
+                                        if (item['is_sold'] != true)
+                                          Positioned(
+                                            right: 4,
+                                            top: 4,
+                                            child: Material(
+                                              color: Colors.white.withOpacity(
+                                                0.9,
                                               ),
-                                      ),
-                                      if (item['is_sold'] != true)
-                                        Positioned(
-                                          right: 4,
-                                          top: 4,
-                                          child: Material(
-                                            color: Colors.white.withOpacity(
-                                              0.9,
-                                            ),
-                                            shape: const CircleBorder(),
-                                            child: IconButton(
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                              tooltip: 'Add to sale',
-                                              icon: const Icon(
-                                                Icons.add_shopping_cart,
-                                              ),
-                                              onPressed: () => _addToSale(
-                                                Map<String, dynamic>.from(
-                                                  item as Map,
+                                              shape: const CircleBorder(),
+                                              child: IconButton(
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                tooltip: 'Add to sale',
+                                                icon: const Icon(
+                                                  Icons.add_shopping_cart,
+                                                ),
+                                                onPressed: () => _addToSale(
+                                                  Map<String, dynamic>.from(
+                                                    item as Map,
+                                                  ),
                                                 ),
                                               ),
                                             ),
                                           ),
+                                        Positioned(
+                                          left: 0,
+                                          right: 0,
+                                          bottom: 0,
+                                          child: Container(
+                                            padding: const EdgeInsets.fromLTRB(
+                                              10,
+                                              22,
+                                              10,
+                                              10,
+                                            ),
+                                            decoration: const BoxDecoration(
+                                              gradient: LinearGradient(
+                                                begin: Alignment.topCenter,
+                                                end: Alignment.bottomCenter,
+                                                colors: [
+                                                  Colors.transparent,
+                                                  Color(0xCC000000),
+                                                ],
+                                              ),
+                                            ),
+                                            child: Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.end,
+                                              children: [
+                                                Expanded(
+                                                  child: Column(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        item['brand'] ??
+                                                            'Unknown Brand',
+                                                        style: const TextStyle(
+                                                          color: Colors.white70,
+                                                          fontSize: 11,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
+                                                      Text(
+                                                        item['name'] ??
+                                                            'Unknown Item',
+                                                        style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          fontSize: 14,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  '${item['price_est']} Ft',
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
                                         ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.all(8.0),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        item['brand'] ?? 'Unknown Brand',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,
-                                          color: Colors.grey,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        item['name'] ?? 'Unknown Item',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        '${item['price_est']} Ft',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                          color: Colors.green[700],
-                                        ),
-                                      ),
-                                      Text(
-                                        item['location'] ?? 'Csengery',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.blueGrey,
-                                        ),
-                                      ),
-                                      Text(
-                                        '${item['category'] ?? '-'} · ${item['gender'] ?? '-'}',
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.blueGrey,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
