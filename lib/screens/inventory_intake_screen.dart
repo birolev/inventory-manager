@@ -9,7 +9,6 @@ import 'package:yoaron_app/constants/categories.dart';
 import 'package:yoaron_app/models/batch_image_queue.dart';
 
 import 'inventory_list_screen.dart';
-import 'search_screen.dart';
 import 'sales_dashboard_screen.dart';
 
 class InventoryScreen extends StatefulWidget {
@@ -307,16 +306,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 MaterialPageRoute(
                   builder: (context) => const SalesDashboardScreen(),
                 ),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.image_search, size: 30),
-            tooltip: 'Keresés (Search)',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SearchScreen()),
               );
             },
           ),

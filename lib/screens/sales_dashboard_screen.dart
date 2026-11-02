@@ -101,8 +101,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
         '${twoDigits(value.hour)}:${twoDigits(value.minute)}';
   }
 
-  String _formatExportAmount(double value) =>
-      value == value.roundToDouble()
+  String _formatExportAmount(double value) => value == value.roundToDouble()
       ? value.toStringAsFixed(0)
       : value.toStringAsFixed(2);
 
@@ -116,8 +115,18 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
     if (sales.isEmpty) return;
 
     const monthNames = [
-      'Jan', 'Feb', 'Már', 'Ápr', 'Máj', 'Jún',
-      'Júl', 'Aug', 'Szept', 'Okt', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Már',
+      'Ápr',
+      'Máj',
+      'Jún',
+      'Júl',
+      'Aug',
+      'Szept',
+      'Okt',
+      'Nov',
+      'Dec',
     ];
     String describeItem(dynamic value) {
       final item = Map<String, dynamic>.from(value as Map);
@@ -167,7 +176,9 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
               if (dialogContext.mounted) Navigator.pop(dialogContext);
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Daily log copied to clipboard')),
+                  const SnackBar(
+                    content: Text('Daily log copied to clipboard'),
+                  ),
                 );
               }
             },
@@ -295,12 +306,14 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
 
   Future<void> _editSale(Map<String, dynamic> sale) async {
     if (_isSavingEdit) return;
-    final items = _itemsFor(sale)
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
+    final items = _itemsFor(
+      sale,
+    ).map((item) => Map<String, dynamic>.from(item as Map)).toList();
     if (items.isEmpty) return;
 
-    final editItems = items.map((item) => Map<String, dynamic>.from(item)).toList();
+    final editItems = items
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
     final detailControllers = <dynamic, Map<String, TextEditingController>>{
       for (final item in editItems)
         item['id']: {
@@ -407,7 +420,8 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                         children: [
                           Expanded(
                             child: TextField(
-                              controller: detailControllers[item['id']]!['size'],
+                              controller:
+                                  detailControllers[item['id']]!['size'],
                               decoration: const InputDecoration(
                                 labelText: 'Size',
                                 border: OutlineInputBorder(),
@@ -451,7 +465,8 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                           )
                           .toList(),
                       onChanged: (value) {
-                        if (value != null) setDialogState(() => location = value);
+                        if (value != null)
+                          setDialogState(() => location = value);
                       },
                     ),
                     const SizedBox(height: 12),
@@ -565,10 +580,22 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                         {
                           'sale_item_id': editItems[index]['id'],
                           'actual_price': prices[index],
-                          'item_name': detailControllers[editItems[index]['id']]!['name']!.text.trim(),
-                          'brand': detailControllers[editItems[index]['id']]!['brand']!.text.trim(),
-                          'category': detailControllers[editItems[index]['id']]!['category']!.text.trim(),
-                          'size': detailControllers[editItems[index]['id']]!['size']!.text.trim(),
+                          'item_name':
+                              detailControllers[editItems[index]['id']]!['name']!
+                                  .text
+                                  .trim(),
+                          'brand':
+                              detailControllers[editItems[index]['id']]!['brand']!
+                                  .text
+                                  .trim(),
+                          'category':
+                              detailControllers[editItems[index]['id']]!['category']!
+                                  .text
+                                  .trim(),
+                          'size':
+                              detailControllers[editItems[index]['id']]!['size']!
+                                  .text
+                                  .trim(),
                         },
                     ],
                   });
@@ -613,9 +640,9 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _isSavingEdit = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not update sale: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not update sale: $error')));
     }
   }
 
@@ -654,9 +681,9 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _isSavingEdit = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not delete sale: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not delete sale: $error')));
     }
   }
 }
@@ -864,12 +891,15 @@ class _CalendarPanel extends StatelessWidget {
                             ? Border.all(color: theme.colorScheme.primary)
                             : null,
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      padding: EdgeInsets.zero,
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
                             '$day',
+                            maxLines: 1,
+                            softWrap: false,
                             style: TextStyle(
                               color: foreground,
                               fontWeight: selected || saleCount > 0
@@ -878,9 +908,11 @@ class _CalendarPanel extends StatelessWidget {
                             ),
                           ),
                           if (saleCount > 0) ...[
-                            const SizedBox(height: 2),
+                            const SizedBox(height: 1),
                             Text(
                               '${summary['revenue'].round()} Ft',
+                              maxLines: 1,
+                              softWrap: false,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(color: foreground, fontSize: 9),
                             ),

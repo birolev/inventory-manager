@@ -25,6 +25,7 @@ const List<String> clothingCategories = [
   'melegítő',
   'sál',
   'táska',
+  'ruha',
   'other',
 ];
 

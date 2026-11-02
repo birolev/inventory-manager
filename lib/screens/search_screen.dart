@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yoaron_app/constants/categories.dart';
 
 import 'package:yoaron_app/widgets/safe_bottom_sheet.dart';
+import '../services/inventory_search.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -54,7 +55,6 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<String?> _chooseCategory() async {
-    final controller = TextEditingController();
     var matchingCategories = filterCategories;
 
     final selection = await showDialog<String>(
@@ -68,7 +68,6 @@ class _SearchScreenState extends State<SearchScreen> {
             child: Column(
               children: [
                 TextField(
-                  controller: controller,
                   autofocus: true,
                   decoration: const InputDecoration(
                     hintText: 'Type a category, e.g. hoo',
@@ -111,7 +110,6 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
     );
 
-    controller.dispose();
     return selection;
   }
 
@@ -294,42 +292,21 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<List<dynamic>> _runInventoryQuery({bool fallback = false}) async {
-    var query = Supabase.instance.client
-        .from('inventory')
-        .select()
-        .eq('is_sold', false);
-
-    if (_selectedLocation != 'All locations') {
-      query = query.eq('location', _selectedLocation);
-    }
-    if (clothingCategories.contains(_selectedCategory)) {
-      query = query.eq('category', _selectedCategory);
-    }
-    if (_selectedBrand.trim().isNotEmpty) {
-      query = query.ilike('brand', '%${_selectedBrand.trim()}%');
-    }
-    if (!fallback) {
-      if (_selectedSize.trim().isNotEmpty) {
-        query = query.ilike('size', _selectedSize.trim());
-      }
-      if (genderOptions.contains(_selectedGender)) {
-        query = query.eq('gender', _selectedGender);
-      }
-      if (_selectedColor.trim().isNotEmpty) {
-        query = query.ilike('color', '%${_selectedColor.trim()}%');
-      }
-      if (_selectedPattern.trim().isNotEmpty) {
-        query = query.ilike('pattern', '%${_selectedPattern.trim()}%');
-      }
-      if (_selectedName.trim().isNotEmpty) {
-        query = query.ilike('name', '%${_selectedName.trim()}%');
-      }
-      if (_selectedCondition.trim().isNotEmpty) {
-        query = query.ilike('condition', '%${_selectedCondition.trim()}%');
-      }
-    }
-
-    return await query;
+    return InventorySearch.search(
+      InventorySearchCriteria(
+        category: _selectedCategory,
+        gender: _selectedGender,
+        location: _selectedLocation,
+        size: _selectedSize,
+        brand: _selectedBrand,
+        color: _selectedColor,
+        pattern: _selectedPattern,
+        name: _selectedName,
+        condition: _selectedCondition,
+        onlyUnsold: true,
+        fallback: fallback,
+      ),
+    );
   }
 
   void _showItemDetails(Map<String, dynamic> item) {
@@ -408,6 +385,26 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  Widget _responsivePair(Widget first, Widget second) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 420) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [first, const SizedBox(height: 8), second],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: first),
+            const SizedBox(width: 8),
+            Expanded(child: second),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -416,445 +413,460 @@ class _SearchScreenState extends State<SearchScreen> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       backgroundColor: Colors.grey[100],
-      body: Column(
-        children: [
-          // --- TOP SECTION: CAMERA & AI STATUS ---
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Search filters',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: () =>
-                          setState(() => _filtersExpanded = !_filtersExpanded),
-                      icon: Icon(
-                        _filtersExpanded ? Icons.expand_less : Icons.tune,
-                      ),
-                      label: Text(_filtersExpanded ? 'Hide' : 'Edit'),
-                    ),
-                  ],
-                ),
-                if (_filtersExpanded) ...[
-                  InkWell(
-                    borderRadius: BorderRadius.circular(4),
-                    onTap: () async {
-                      final value = await _chooseCategory();
-                      if (value == null || !mounted) return;
-                      setState(() {
-                        _selectedCategory = value;
-                        _categoryManuallyChanged = true;
-                        _searchResults = [];
-                      });
-                    },
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Search category',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.category),
-                        suffixIcon: Icon(Icons.arrow_drop_down),
-                        isDense: true,
-                      ),
-                      child: Text(_selectedCategory),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey(_selectedGender),
-                    initialValue: _selectedGender,
-                    decoration: const InputDecoration(
-                      labelText: 'Search gender',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.people),
-                      isDense: true,
-                    ),
-                    items: ['Minden', ...genderOptions]
-                        .map(
-                          (gender) => DropdownMenuItem(
-                            value: gender,
-                            child: Text(gender),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() {
-                          _selectedGender = value;
-                          _genderManuallyChanged = true;
-                          _searchResults = [];
-                        });
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: _selectedLocation,
-                    decoration: const InputDecoration(
-                      labelText: 'Search location',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.store),
-                      isDense: true,
-                    ),
-                    items: _locations
-                        .map(
-                          (location) => DropdownMenuItem(
-                            value: location,
-                            child: Text(location),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() {
-                          _selectedLocation = value;
-                          _searchResults = [];
-                        });
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _sizeController,
-                    textInputAction: TextInputAction.search,
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedSize = value;
-                        _searchResults = [];
-                      });
-                    },
-                    onSubmitted: (_) {
-                      _searchInventory();
-                    },
-                    decoration: const InputDecoration(
-                      labelText: 'Search size',
-                      hintText: 'e.g. M, 32, 42',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.straighten),
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _colorController,
-                          textInputAction: TextInputAction.next,
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedColor = value;
-                              _searchResults = [];
-                            });
-                          },
-                          decoration: const InputDecoration(
-                            labelText: 'Search color',
-                            prefixIcon: Icon(Icons.palette_outlined),
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _patternController,
-                          textInputAction: TextInputAction.search,
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedPattern = value;
-                              _searchResults = [];
-                            });
-                          },
-                          onSubmitted: (_) {
-                            _searchInventory();
-                          },
-                          decoration: const InputDecoration(
-                            labelText: 'Pattern',
-                            prefixIcon: Icon(Icons.texture),
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  ExpansionTile(
-                    tilePadding: EdgeInsets.zero,
-                    title: const Text('More filters: name, brand, condition'),
-                    children: [
-                      TextField(
-                        controller: _nameController,
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedName = value;
-                            _searchResults = [];
-                          });
-                        },
-                        decoration: const InputDecoration(
-                          labelText: 'Name',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _brandController,
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedBrand = value;
-                            _searchResults = [];
-                          });
-                        },
-                        decoration: const InputDecoration(
-                          labelText: 'Brand',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _conditionController,
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedCondition = value;
-                            _searchResults = [];
-                          });
-                        },
-                        decoration: const InputDecoration(
-                          labelText: 'Condition',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                ] else
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Category: $_selectedCategory · Gender: $_selectedGender · '
-                        'Location: $_selectedLocation'
-                        '${_selectedSize.trim().isEmpty ? '' : ' · Size: ${_selectedSize.trim()}'}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.blueGrey,
-                        ),
-                      ),
-                    ),
-                  ),
-                Row(
-                  children: [
-                    // Thumbnail Preview
-                    GestureDetector(
-                      onTap: () => _pickImage(ImageSource.camera),
-                      child: Container(
-                        height: 100,
-                        width: 100,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[200],
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey[400]!),
-                        ),
-                        child: _searchImage != null
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: Image.file(
-                                  _searchImage!,
-                                  fit: BoxFit.cover,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.camera_alt,
-                                color: Colors.grey,
-                                size: 40,
-                              ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-
-                    // Search Button & Status
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (!_isSearching && _searchResults.isEmpty)
-                            FilledButton.icon(
-                              onPressed: _searchImage == null
-                                  ? _searchInventory
-                                  : _executeSearch,
-                              icon: const Icon(Icons.search),
-                              label: Text(
-                                _searchImage == null
-                                    ? 'Search inventory'
-                                    : _aiCriteria == null
-                                    ? 'Analyze image & search'
-                                    : 'Search inventory',
+      body: LayoutBuilder(
+        builder: (context, constraints) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // --- TOP SECTION: CAMERA & AI STATUS ---
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: constraints.maxHeight * 0.52,
+              ),
+              child: SingleChildScrollView(
+                child: Material(
+                  color: Colors.white,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Search filters',
+                                style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                             ),
-                          OutlinedButton.icon(
-                            onPressed: () => _pickImage(ImageSource.gallery),
-                            icon: const Icon(Icons.photo_library_outlined),
-                            label: const Text('Choose from phone'),
-                          ),
-                          if (_isSearching)
-                            Row(
-                              children: [
-                                const CircularProgressIndicator(),
-                                const SizedBox(width: 10),
-                                Text(
-                                  _aiCriteria == null
-                                      ? 'AI elemzés...'
-                                      : 'Keresés...',
-                                ),
-                              ],
-                            ),
-                          if (_aiCriteria != null) ...[
-                            const Text(
-                              "AI Keresési szűrők:",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                                color: Colors.grey,
+                            TextButton.icon(
+                              onPressed: () => setState(
+                                () => _filtersExpanded = !_filtersExpanded,
                               ),
-                            ),
-                            Text(
-                              "${_aiCriteria!['category']} | ${_aiCriteria!['gender']} | ${_aiCriteria!['color']} | ${_aiCriteria!['pattern']}",
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
+                              icon: Icon(
+                                _filtersExpanded
+                                    ? Icons.expand_less
+                                    : Icons.tune,
                               ),
+                              label: Text(_filtersExpanded ? 'Hide' : 'Edit'),
                             ),
                           ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          // --- BOTTOM SECTION: RESULTS GRID ---
-          Expanded(
-            child: _searchResults.isEmpty
-                ? Center(
-                    child: Text(
-                      _searchImage == null
-                          ? 'Choose filters, then search inventory.'
-                          : _usedFallback
-                          ? 'No matches found, including the broader search.'
-                          : 'Nincs találat. (No exact matches found)',
-                      style: const TextStyle(color: Colors.grey),
-                    ),
-                  )
-                : GridView.builder(
-                    padding: const EdgeInsets.all(10),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          childAspectRatio: 0.7,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
                         ),
-                    itemCount: _searchResults.length,
-                    itemBuilder: (context, index) {
-                      final item = _searchResults[index];
-
-                      // --- CHANGED: WRAPPED IN INKWELL ---
-                      return InkWell(
-                        onTap: () =>
-                            _showItemDetails(item), // Opens the details sheet!
-                        borderRadius: BorderRadius.circular(12),
-                        child: Card(
-                          clipBehavior: Clip.antiAlias,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                        if (_filtersExpanded) ...[
+                          InkWell(
+                            borderRadius: BorderRadius.circular(4),
+                            onTap: () async {
+                              final value = await _chooseCategory();
+                              if (value == null || !mounted) return;
+                              setState(() {
+                                _selectedCategory = value;
+                                _categoryManuallyChanged = true;
+                                _searchResults = [];
+                              });
+                            },
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Search category',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.category),
+                                suffixIcon: Icon(Icons.arrow_drop_down),
+                                isDense: true,
+                              ),
+                              child: Text(_selectedCategory),
+                            ),
                           ),
-                          elevation: 2,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String>(
+                            key: ValueKey(_selectedGender),
+                            initialValue: _selectedGender,
+                            decoration: const InputDecoration(
+                              labelText: 'Search gender',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.people),
+                              isDense: true,
+                            ),
+                            items: ['Minden', ...genderOptions]
+                                .map(
+                                  (gender) => DropdownMenuItem(
+                                    value: gender,
+                                    child: Text(gender),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() {
+                                  _selectedGender = value;
+                                  _genderManuallyChanged = true;
+                                  _searchResults = [];
+                                });
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String>(
+                            initialValue: _selectedLocation,
+                            decoration: const InputDecoration(
+                              labelText: 'Search location',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.store),
+                              isDense: true,
+                            ),
+                            items: _locations
+                                .map(
+                                  (location) => DropdownMenuItem(
+                                    value: location,
+                                    child: Text(location),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() {
+                                  _selectedLocation = value;
+                                  _searchResults = [];
+                                });
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _sizeController,
+                            textInputAction: TextInputAction.search,
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedSize = value;
+                                _searchResults = [];
+                              });
+                            },
+                            onSubmitted: (_) {
+                              _searchInventory();
+                            },
+                            decoration: const InputDecoration(
+                              labelText: 'Search size',
+                              hintText: 'e.g. M, 32, 42',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.straighten),
+                              isDense: true,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _responsivePair(
+                            TextField(
+                              controller: _colorController,
+                              textInputAction: TextInputAction.next,
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedColor = value;
+                                  _searchResults = [];
+                                });
+                              },
+                              decoration: const InputDecoration(
+                                labelText: 'Search color',
+                                prefixIcon: Icon(Icons.palette_outlined),
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                            TextField(
+                              controller: _patternController,
+                              textInputAction: TextInputAction.search,
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedPattern = value;
+                                  _searchResults = [];
+                                });
+                              },
+                              onSubmitted: (_) {
+                                _searchInventory();
+                              },
+                              decoration: const InputDecoration(
+                                labelText: 'Pattern',
+                                prefixIcon: Icon(Icons.texture),
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ExpansionTile(
+                            tilePadding: EdgeInsets.zero,
+                            title: const Text(
+                              'More filters: name, brand, condition',
+                            ),
                             children: [
-                              Expanded(
-                                child: Container(
-                                  width: double.infinity,
-                                  color: Colors.grey[200],
-                                  child: item['image_url'] != null
-                                      ? Image.network(
-                                          item['image_url'],
-                                          fit: BoxFit.cover,
-                                        )
-                                      : const Icon(Icons.image_not_supported),
+                              TextField(
+                                controller: _nameController,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedName = value;
+                                    _searchResults = [];
+                                  });
+                                },
+                                decoration: const InputDecoration(
+                                  labelText: 'Name',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
                                 ),
                               ),
-                              Padding(
-                                padding: const EdgeInsets.all(8.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      item['brand'] ?? '',
-                                      style: const TextStyle(
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: _brandController,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedBrand = value;
+                                    _searchResults = [];
+                                  });
+                                },
+                                decoration: const InputDecoration(
+                                  labelText: 'Brand',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: _conditionController,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedCondition = value;
+                                    _searchResults = [];
+                                  });
+                                },
+                                decoration: const InputDecoration(
+                                  labelText: 'Condition',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                        ] else
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Category: $_selectedCategory · Gender: $_selectedGender · '
+                                'Location: $_selectedLocation'
+                                '${_selectedSize.trim().isEmpty ? '' : ' · Size: ${_selectedSize.trim()}'}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.blueGrey,
+                                ),
+                              ),
+                            ),
+                          ),
+                        Row(
+                          children: [
+                            // Thumbnail Preview
+                            GestureDetector(
+                              onTap: () => _pickImage(ImageSource.camera),
+                              child: Container(
+                                height: 100,
+                                width: 100,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[200],
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.grey[400]!),
+                                ),
+                                child: _searchImage != null
+                                    ? ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Image.file(
+                                          _searchImage!,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      )
+                                    : const Icon(
+                                        Icons.camera_alt,
+                                        color: Colors.grey,
+                                        size: 40,
+                                      ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+
+                            // Search Button & Status
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (!_isSearching && _searchResults.isEmpty)
+                                    FilledButton.icon(
+                                      onPressed: _searchImage == null
+                                          ? _searchInventory
+                                          : _executeSearch,
+                                      icon: const Icon(Icons.search),
+                                      label: Text(
+                                        _searchImage == null
+                                            ? 'Search inventory'
+                                            : _aiCriteria == null
+                                            ? 'Analyze image & search'
+                                            : 'Search inventory',
+                                      ),
+                                    ),
+                                  OutlinedButton.icon(
+                                    onPressed: () =>
+                                        _pickImage(ImageSource.gallery),
+                                    icon: const Icon(
+                                      Icons.photo_library_outlined,
+                                    ),
+                                    label: const Text('Choose from phone'),
+                                  ),
+                                  if (_isSearching)
+                                    Row(
+                                      children: [
+                                        const CircularProgressIndicator(),
+                                        const SizedBox(width: 10),
+                                        Text(
+                                          _aiCriteria == null
+                                              ? 'AI elemzés...'
+                                              : 'Keresés...',
+                                        ),
+                                      ],
+                                    ),
+                                  if (_aiCriteria != null) ...[
+                                    const Text(
+                                      "AI Keresési szűrők:",
+                                      style: TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 12,
                                         color: Colors.grey,
                                       ),
                                     ),
                                     Text(
-                                      item['location'] ?? 'Csengery',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.blueGrey,
-                                      ),
-                                    ),
-                                    Text(
-                                      item['name'] ?? '',
+                                      "${_aiCriteria!['category']} | ${_aiCriteria!['gender']} | ${_aiCriteria!['color']} | ${_aiCriteria!['pattern']}",
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    Text(
-                                      '${item['category'] ?? '-'} · ${item['gender'] ?? '-'}',
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.blueGrey,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    Text(
-                                      '${item['price_est']} Ft',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
-                                        color: Colors.green[700],
                                       ),
                                     ),
                                   ],
-                                ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      );
-                    },
+                      ],
+                    ),
                   ),
-          ),
-        ],
+                ),
+              ),
+            ),
+
+            // --- BOTTOM SECTION: RESULTS GRID ---
+            Expanded(
+              child: _searchResults.isEmpty
+                  ? Center(
+                      child: Text(
+                        _searchImage == null
+                            ? 'Choose filters, then search inventory.'
+                            : _usedFallback
+                            ? 'No matches found, including the broader search.'
+                            : 'Nincs találat. (No exact matches found)',
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    )
+                  : GridView.builder(
+                      padding: const EdgeInsets.all(10),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            childAspectRatio: 0.7,
+                            crossAxisSpacing: 10,
+                            mainAxisSpacing: 10,
+                          ),
+                      itemCount: _searchResults.length,
+                      itemBuilder: (context, index) {
+                        final item = _searchResults[index];
+
+                        // --- CHANGED: WRAPPED IN INKWELL ---
+                        return InkWell(
+                          onTap: () => _showItemDetails(
+                            item,
+                          ), // Opens the details sheet!
+                          borderRadius: BorderRadius.circular(12),
+                          child: Card(
+                            clipBehavior: Clip.antiAlias,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 2,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Container(
+                                    width: double.infinity,
+                                    color: Colors.grey[200],
+                                    child: item['image_url'] != null
+                                        ? Image.network(
+                                            item['image_url'],
+                                            fit: BoxFit.cover,
+                                          )
+                                        : const Icon(Icons.image_not_supported),
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.all(8.0),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item['brand'] ?? '',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                      Text(
+                                        item['location'] ?? 'Csengery',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.blueGrey,
+                                        ),
+                                      ),
+                                      Text(
+                                        item['name'] ?? '',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      Text(
+                                        '${item['category'] ?? '-'} · ${item['gender'] ?? '-'}',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.blueGrey,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      Text(
+                                        '${item['price_est']} Ft',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                          color: Colors.green[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
