@@ -1,5 +1,7 @@
 # Secondhand Inventory & Sales Manager
 
+[![Web CI and deploy](https://github.com/birolev/yoaron-inventory-manager/actions/workflows/web-ci-deploy.yml/badge.svg?branch=main)](https://github.com/birolev/yoaron-inventory-manager/actions/workflows/web-ci-deploy.yml)
+
 A Flutter application for managing the day-to-day operations of a secondhand clothing business. It brings AI-assisted intake, inventory search, sales recording, and reporting into one workflow.
 
 **In daily use, managing approximately 2,000 clothing items across multiple store locations.**
@@ -35,3 +37,9 @@ Supabase Auth provides sign-in. PostgreSQL stores inventory and sales data, whil
 ## Platforms
 
 Android and Web
+
+## CI/CD
+
+GitHub Actions runs Flutter analysis, the widget test suite, and a release web build for pull requests targeting `main`. Pull requests from this repository also receive a Netlify preview deployment. After changes are merged to `main`, the workflow builds the web app and deploys it to Netlify production.
+
+The workflow pins Flutter to 3.47.7 and caches the Flutter SDK and Dart packages. Netlify deployments use the `NETLIFY_AUTH_TOKEN` and `NETLIFY_SITE_ID` GitHub Actions repository secrets.
