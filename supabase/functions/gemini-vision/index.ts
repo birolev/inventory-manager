@@ -43,7 +43,7 @@ const requestTimeoutMs = 12_000;
 const retryBaseDelayMs = 500;
 const retryMaxDelayMs = 4_000;
 const modelHealthTableFunctions = [
-  "claim_ai_model",
+  "claim_ai_model_for_edge",
   "record_ai_model_success",
   "record_ai_model_failure",
 ] as const;
@@ -136,7 +136,7 @@ async function healthRpc(functionName: (typeof modelHealthTableFunctions)[number
   if (!response.ok) {
     throw new Error(`Model health RPC ${functionName} returned ${response.status}`);
   }
-  return functionName === "claim_ai_model" || functionName === "record_ai_model_failure"
+  return functionName === "claim_ai_model_for_edge" || functionName === "record_ai_model_failure"
     ? await response.json()
     : null;
 }
@@ -146,14 +146,14 @@ async function modelIsAvailable(model: string): Promise<boolean> {
   const cached = healthCache.get(model);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
   try {
-    const available = await healthRpc("claim_ai_model", {
+    const state = await healthRpc("claim_ai_model_for_edge", {
       p_model_name: model,
       p_probe_lease_seconds: 90,
-    }) as boolean;
-    // Cache only the blocked state: a true result may represent the single
-    // half-open probe lease and must not be replayed to concurrent callers.
-    if (!available) healthCache.set(model, { value: false, expiresAt: Date.now() + 5_000 });
-    return available;
+    }) as string;
+    if (state === "available") healthCache.set(model, { value: true, expiresAt: Date.now() + 5_000 });
+    if (state === "blocked") healthCache.set(model, { value: false, expiresAt: Date.now() + 5_000 });
+    // A half-open probe lease is never cached, preserving its single-caller guarantee.
+    return state === "available" || state === "probe";
   } catch (error) {
     sharedHealthStoreUnavailable = true;
     if (!healthStoreWarningLogged) {
