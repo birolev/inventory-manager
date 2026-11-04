@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yoaron_app/constants/categories.dart';
+import 'package:yoaron_app/widgets/cached_remote_image.dart';
 import '../services/inventory_search.dart';
 
 import 'sales_screen.dart';
@@ -98,8 +99,8 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     try {
       final photo = await _imagePicker.pickImage(
         source: source,
-        imageQuality: 55,
-        maxWidth: 700,
+        imageQuality: 80,
+        maxWidth: 1600,
       );
       if (photo == null) return;
       setState(() {
@@ -375,7 +376,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                       height: 300,
                       width: double.infinity,
                       color: Colors.black12,
-                      child: Image.network(
+                      child: CachedRemoteImage(
                         imageUrl,
                         fit: BoxFit.contain,
                         loadingBuilder: (context, child, progress) =>
@@ -581,9 +582,10 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
           child: InteractiveViewer(
             minScale: 0.5,
             maxScale: 4,
-            child: Image.network(
+            child: CachedRemoteImage(
               imageUrl,
               fit: BoxFit.contain,
+              cacheWidth: null,
               loadingBuilder: (context, child, progress) => progress == null
                   ? child
                   : const Center(child: CircularProgressIndicator()),
@@ -1006,7 +1008,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                                         Container(
                                           color: Colors.grey[200],
                                           child: item['image_url'] != null
-                                              ? Image.network(
+                                              ? CachedRemoteImage(
                                                   item['image_url'],
                                                   fit: BoxFit.cover,
                                                 )

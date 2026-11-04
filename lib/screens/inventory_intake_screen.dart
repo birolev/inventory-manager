@@ -77,8 +77,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
       await _loadLastUsedSize();
       final XFile? pickedFile = await _picker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 70,
-        maxWidth: 1000,
+        imageQuality: 80,
+        maxWidth: 1600,
       );
 
       if (pickedFile != null) {
@@ -93,8 +93,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
     try {
       await _loadLastUsedSize();
       final List<XFile> pickedFiles = await _picker.pickMultiImage(
-        imageQuality: 70,
-        maxWidth: 1000,
+        imageQuality: 80,
+        maxWidth: 1600,
       );
 
       if (pickedFiles.isNotEmpty) {

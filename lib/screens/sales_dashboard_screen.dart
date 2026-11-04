@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:yoaron_app/widgets/cached_remote_image.dart';
 
 class SalesDashboardScreen extends StatefulWidget {
   const SalesDashboardScreen({super.key});
@@ -1123,7 +1124,7 @@ class _DailySalesPanel extends StatelessWidget {
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
-      child: Image.network(
+      child: CachedRemoteImage(
         imageUrl,
         width: 48,
         height: 48,
@@ -1147,9 +1148,10 @@ class _DailySalesPanel extends StatelessWidget {
         child: Stack(
           children: [
             InteractiveViewer(
-              child: Image.network(
+              child: CachedRemoteImage(
                 imageUrl,
                 fit: BoxFit.contain,
+                cacheWidth: null,
                 errorBuilder: (context, error, stackTrace) => const SizedBox(
                   width: 320,
                   height: 320,
