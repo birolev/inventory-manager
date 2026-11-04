@@ -19,6 +19,7 @@ Deno.test("rejects mismatched MIME, malformed base64, and oversized dimensions",
   if (validateImageBase64("%%%", "image/png")) throw new Error("malformed base64 accepted");
   const header = new Uint8Array(24);
   header.set([0x89, 0x50, 0x4e, 0x47], 0);
+  header.set([0x49, 0x48, 0x44, 0x52], 12);
   new DataView(header.buffer).setUint32(16, MAX_IMAGE_DIMENSION + 1);
   new DataView(header.buffer).setUint32(20, 1);
   const encoded = btoa(String.fromCharCode(...header));
