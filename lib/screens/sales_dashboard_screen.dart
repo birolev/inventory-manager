@@ -39,7 +39,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
           .from('sales')
           .select(
             'id, sold_at, location, payment_method, notes, recorded_by_name, recorded_by_email, recorded_by, '
-            'sale_items(id, item_name, brand, category, size, gender, actual_price)',
+            'sale_items(id, item_name, brand, category, size, gender, actual_price, inventory(image_url))',
           )
           .gte('sold_at', start.toUtc().toIso8601String())
           .lt('sold_at', end.toUtc().toIso8601String())
@@ -1068,6 +1068,10 @@ class _DailySalesPanel extends StatelessWidget {
                       ListTile(
                         dense: true,
                         contentPadding: const EdgeInsets.only(left: 12),
+                        leading: _saleItemThumbnail(context, item),
+                        onTap: _saleItemImageUrl(item) == null
+                            ? null
+                            : () => _showSaleItemImage(context, item),
                         title: Text(item['item_name']?.toString() ?? 'Item'),
                         subtitle: Text(
                           [
@@ -1099,6 +1103,74 @@ class _DailySalesPanel extends StatelessWidget {
   double _readPrice(dynamic value) => value is num
       ? value.toDouble()
       : double.tryParse(value?.toString() ?? '') ?? 0;
+
+  String? _saleItemImageUrl(dynamic value) {
+    if (value is! Map) return null;
+    final inventory = value['inventory'];
+    if (inventory is! Map) return null;
+    final url = inventory['image_url']?.toString().trim();
+    return url == null || url.isEmpty ? null : url;
+  }
+
+  Widget _saleItemThumbnail(BuildContext context, dynamic item) {
+    final imageUrl = _saleItemImageUrl(item);
+    if (imageUrl == null) {
+      return const SizedBox(
+        width: 48,
+        height: 48,
+        child: Icon(Icons.image_not_supported_outlined),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: Image.network(
+        imageUrl,
+        width: 48,
+        height: 48,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => const SizedBox(
+          width: 48,
+          height: 48,
+          child: Icon(Icons.broken_image_outlined),
+        ),
+      ),
+    );
+  }
+
+  void _showSaleItemImage(BuildContext context, dynamic item) {
+    final imageUrl = _saleItemImageUrl(item);
+    if (imageUrl == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            InteractiveViewer(
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) => const SizedBox(
+                  width: 320,
+                  height: 320,
+                  child: Center(child: Icon(Icons.broken_image_outlined, size: 48)),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 4,
+              right: 4,
+              child: IconButton.filledTonal(
+                onPressed: () => Navigator.pop(dialogContext),
+                icon: const Icon(Icons.close),
+                tooltip: 'Close image',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _ErrorPanel extends StatelessWidget {
