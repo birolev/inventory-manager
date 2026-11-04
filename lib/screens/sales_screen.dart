@@ -981,6 +981,7 @@ class _SalesScreenState extends State<SalesScreen> {
                         : CachedRemoteImage(
                             item['image_url'].toString(),
                             fit: BoxFit.cover,
+                            thumbnail: true,
                             errorBuilder: (context, error, stackTrace) =>
                                 const Icon(Icons.broken_image),
                           ),
@@ -1511,6 +1512,7 @@ class _SalesScreenState extends State<SalesScreen> {
                         : CachedRemoteImage(
                             item['image_url'].toString(),
                             fit: BoxFit.cover,
+                            thumbnail: true,
                             errorBuilder: (context, error, stackTrace) =>
                                 const Icon(Icons.broken_image),
                           ),

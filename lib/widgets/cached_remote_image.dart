@@ -12,6 +12,7 @@ class CachedRemoteImage extends StatefulWidget {
     this.width,
     this.height,
     this.cacheWidth = 512,
+    this.thumbnail = false,
     this.errorBuilder,
     this.loadingBuilder,
   });
@@ -21,6 +22,7 @@ class CachedRemoteImage extends StatefulWidget {
   final double? width;
   final double? height;
   final int? cacheWidth;
+  final bool thumbnail;
   final Widget Function(BuildContext, Object, StackTrace?)? errorBuilder;
   final ImageLoadingBuilder? loadingBuilder;
 
@@ -30,19 +32,60 @@ class CachedRemoteImage extends StatefulWidget {
 
 class _CachedRemoteImageState extends State<CachedRemoteImage> {
   late Future<ImageProvider> _provider;
+  bool _retriedOriginal = false;
+
+  Future<ImageProvider> _loadProvider() {
+    final thumbnailUrl = widget.thumbnail ? _thumbnailUrl(widget.url) : null;
+    return cache.imageProviderFor(
+      thumbnailUrl ?? widget.url,
+      cacheWidth: widget.cacheWidth,
+      fallbackUrl: thumbnailUrl == null ? null : widget.url,
+    );
+  }
+
+  String? _thumbnailUrl(String value) {
+    final uri = Uri.tryParse(value);
+    const objectPath = '/storage/v1/object/public/';
+    if (uri == null || !uri.path.contains(objectPath)) return null;
+    final path = uri.path.replaceFirst(objectPath, '/storage/v1/render/image/public/');
+    return uri.replace(
+      path: path,
+      queryParameters: {
+        ...uri.queryParameters,
+        'width': '512',
+        'height': '512',
+        'resize': 'cover',
+        'quality': '80',
+      },
+    ).toString();
+  }
 
   @override
   void initState() {
     super.initState();
-    _provider = cache.imageProviderFor(widget.url, cacheWidth: widget.cacheWidth);
+    _provider = _loadProvider();
   }
 
   @override
   void didUpdateWidget(CachedRemoteImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.url != widget.url) {
-      _provider = cache.imageProviderFor(widget.url, cacheWidth: widget.cacheWidth);
+    if (oldWidget.url != widget.url || oldWidget.thumbnail != widget.thumbnail) {
+      _retriedOriginal = false;
+      _provider = _loadProvider();
     }
+  }
+
+  Widget _onImageError(BuildContext context, Object error, StackTrace? stackTrace) {
+    if (widget.thumbnail && !_retriedOriginal) {
+      _retriedOriginal = true;
+      _provider = cache.imageProviderFor(widget.url, cacheWidth: widget.cacheWidth);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    return widget.errorBuilder?.call(context, error, stackTrace) ??
+        const Icon(Icons.broken_image);
   }
 
   @override
@@ -70,7 +113,7 @@ class _CachedRemoteImageState extends State<CachedRemoteImage> {
         width: widget.width,
         height: widget.height,
         loadingBuilder: widget.loadingBuilder,
-        errorBuilder: widget.errorBuilder,
+        errorBuilder: _onImageError,
       );
     },
   );

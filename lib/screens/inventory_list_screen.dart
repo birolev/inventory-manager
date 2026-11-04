@@ -1011,6 +1011,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                                               ? CachedRemoteImage(
                                                   item['image_url'],
                                                   fit: BoxFit.cover,
+                                                  thumbnail: true,
                                                 )
                                               : const Icon(
                                                   Icons.image_not_supported,

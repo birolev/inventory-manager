@@ -8,10 +8,16 @@ import 'package:path_provider/path_provider.dart';
 const _maxImageBytes = 10 * 1024 * 1024;
 const _maxCacheBytes = 250 * 1024 * 1024;
 
-Future<ImageProvider> imageProviderFor(String url, {int? cacheWidth}) async {
+Future<ImageProvider> imageProviderFor(
+  String url, {
+  int? cacheWidth,
+  String? fallbackUrl,
+}) async {
   final uri = Uri.tryParse(url);
   if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http') || uri.host.isEmpty) {
-    return _networkProvider(url, cacheWidth);
+    return fallbackUrl == null
+        ? _networkProvider(url, cacheWidth)
+        : imageProviderFor(fallbackUrl, cacheWidth: cacheWidth);
   }
   try {
     final support = await getApplicationSupportDirectory();
@@ -25,7 +31,9 @@ Future<ImageProvider> imageProviderFor(String url, {int? cacheWidth}) async {
       if (response.statusCode < 200 || response.statusCode >= 300 ||
           !contentType.startsWith('image/') || response.bodyBytes.isEmpty ||
           response.bodyBytes.length > _maxImageBytes) {
-        return _networkProvider(url, cacheWidth);
+        return fallbackUrl == null
+            ? _networkProvider(url, cacheWidth)
+            : imageProviderFor(fallbackUrl, cacheWidth: cacheWidth);
       }
       final temporary = File('${file.path}.tmp');
       await temporary.writeAsBytes(response.bodyBytes, flush: true);
@@ -35,7 +43,9 @@ Future<ImageProvider> imageProviderFor(String url, {int? cacheWidth}) async {
     final provider = FileImage(file);
     return cacheWidth == null ? provider : ResizeImage(provider, width: cacheWidth);
   } catch (_) {
-    return _networkProvider(url, cacheWidth);
+    return fallbackUrl == null
+        ? _networkProvider(url, cacheWidth)
+        : imageProviderFor(fallbackUrl, cacheWidth: cacheWidth);
   }
 }
 
