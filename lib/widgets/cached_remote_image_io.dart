@@ -20,33 +20,41 @@ Future<ImageProvider> imageProviderFor(
         : imageProviderFor(fallbackUrl, cacheWidth: cacheWidth);
   }
   try {
-    final support = await getApplicationSupportDirectory();
-    final directory = Directory('${support.path}${Platform.pathSeparator}item-photo-cache');
-    await directory.create(recursive: true);
-    final key = base64Url.encode(utf8.encode(url)).replaceAll('=', '');
-    final file = File('${directory.path}${Platform.pathSeparator}$key.img');
-    if (!await file.exists()) {
-      final response = await http.get(uri).timeout(const Duration(seconds: 20));
-      final contentType = response.headers['content-type']?.toLowerCase() ?? '';
-      if (response.statusCode < 200 || response.statusCode >= 300 ||
-          !contentType.startsWith('image/') || response.bodyBytes.isEmpty ||
-          response.bodyBytes.length > _maxImageBytes) {
-        return fallbackUrl == null
-            ? _networkProvider(url, cacheWidth)
-            : await imageProviderFor(fallbackUrl, cacheWidth: cacheWidth);
-      }
-      final temporary = File('${file.path}.tmp');
-      await temporary.writeAsBytes(response.bodyBytes, flush: true);
-      await temporary.rename(file.path);
-      await _trimCache(directory, file);
-    }
-    final provider = FileImage(file);
-    return cacheWidth == null ? provider : ResizeImage(provider, width: cacheWidth);
+    final provider = await _loadCachedImage(url, uri, cacheWidth);
+    if (provider != null) return provider;
   } catch (_) {
-    return fallbackUrl == null
-        ? _networkProvider(url, cacheWidth)
-        : await imageProviderFor(fallbackUrl, cacheWidth: cacheWidth);
+    // Cache failures fall back to the network provider below.
   }
+  return fallbackUrl == null
+      ? _networkProvider(url, cacheWidth)
+      : imageProviderFor(fallbackUrl, cacheWidth: cacheWidth);
+}
+
+Future<ImageProvider?> _loadCachedImage(
+  String url,
+  Uri uri,
+  int? cacheWidth,
+) async {
+  final support = await getApplicationSupportDirectory();
+  final directory = Directory('${support.path}${Platform.pathSeparator}item-photo-cache');
+  await directory.create(recursive: true);
+  final key = base64Url.encode(utf8.encode(url)).replaceAll('=', '');
+  final file = File('${directory.path}${Platform.pathSeparator}$key.img');
+  if (!await file.exists()) {
+    final response = await http.get(uri).timeout(const Duration(seconds: 20));
+    final contentType = response.headers['content-type']?.toLowerCase() ?? '';
+    if (response.statusCode < 200 || response.statusCode >= 300 ||
+        !contentType.startsWith('image/') || response.bodyBytes.isEmpty ||
+        response.bodyBytes.length > _maxImageBytes) {
+      return null;
+    }
+    final temporary = File('${file.path}.tmp');
+    await temporary.writeAsBytes(response.bodyBytes, flush: true);
+    await temporary.rename(file.path);
+    await _trimCache(directory, file);
+  }
+  final provider = FileImage(file);
+  return cacheWidth == null ? provider : ResizeImage(provider, width: cacheWidth);
 }
 
 ImageProvider _networkProvider(String url, int? cacheWidth) => cacheWidth == null
