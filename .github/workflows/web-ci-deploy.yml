@@ -43,6 +43,7 @@ jobs:
             web:
               - 'lib/**'
               - 'web/**'
+              - 'netlify.toml'
               - 'pubspec.yaml'
               - 'pubspec.lock'
               - 'supabase.env'
