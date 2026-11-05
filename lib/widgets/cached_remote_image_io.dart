@@ -33,7 +33,7 @@ Future<ImageProvider> imageProviderFor(
           response.bodyBytes.length > _maxImageBytes) {
         return fallbackUrl == null
             ? _networkProvider(url, cacheWidth)
-            : imageProviderFor(fallbackUrl, cacheWidth: cacheWidth);
+            : await imageProviderFor(fallbackUrl, cacheWidth: cacheWidth);
       }
       final temporary = File('${file.path}.tmp');
       await temporary.writeAsBytes(response.bodyBytes, flush: true);
@@ -45,7 +45,7 @@ Future<ImageProvider> imageProviderFor(
   } catch (_) {
     return fallbackUrl == null
         ? _networkProvider(url, cacheWidth)
-        : imageProviderFor(fallbackUrl, cacheWidth: cacheWidth);
+        : await imageProviderFor(fallbackUrl, cacheWidth: cacheWidth);
   }
 }
 
