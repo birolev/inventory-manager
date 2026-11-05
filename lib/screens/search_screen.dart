@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yoaron_app/constants/categories.dart';
+import 'package:yoaron_app/widgets/cached_remote_image.dart';
 
 import 'package:yoaron_app/widgets/safe_bottom_sheet.dart';
 import '../services/inventory_search.dart';
@@ -117,8 +118,8 @@ class _SearchScreenState extends State<SearchScreen> {
     try {
       final XFile? pickedFile = await _picker.pickImage(
         source: source,
-        imageQuality: 50,
-        maxWidth: 600,
+        imageQuality: 80,
+        maxWidth: 1600,
       );
 
       if (pickedFile != null) {
@@ -801,9 +802,10 @@ class _SearchScreenState extends State<SearchScreen> {
                                     width: double.infinity,
                                     color: Colors.grey[200],
                                     child: item['image_url'] != null
-                                        ? Image.network(
+                                        ? CachedRemoteImage(
                                             item['image_url'],
                                             fit: BoxFit.cover,
+                                            thumbnail: true,
                                           )
                                         : const Icon(Icons.image_not_supported),
                                   ),

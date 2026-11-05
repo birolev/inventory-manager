@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yoaron_app/constants/categories.dart';
+import 'package:yoaron_app/widgets/cached_remote_image.dart';
 import '../services/inventory_search.dart';
 
 class _SalePhoto {
@@ -117,8 +118,8 @@ class _SalesScreenState extends State<SalesScreen> {
   Future<void> _pickGalleryPhotos() async {
     try {
       final files = await _picker.pickMultiImage(
-        imageQuality: 55,
-        maxWidth: 700,
+        imageQuality: 80,
+        maxWidth: 1600,
       );
       if (files.isNotEmpty) _addPhotos(files);
     } catch (error) {
@@ -130,8 +131,8 @@ class _SalesScreenState extends State<SalesScreen> {
     try {
       final file = await _picker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 55,
-        maxWidth: 700,
+        imageQuality: 80,
+        maxWidth: 1600,
       );
       if (file != null) _addPhotos([file]);
     } catch (error) {
@@ -977,9 +978,10 @@ class _SalesScreenState extends State<SalesScreen> {
                     color: Colors.black12,
                     child: item['image_url'] == null
                         ? const Icon(Icons.image_not_supported)
-                        : Image.network(
+                        : CachedRemoteImage(
                             item['image_url'].toString(),
                             fit: BoxFit.cover,
+                            thumbnail: true,
                             errorBuilder: (context, error, stackTrace) =>
                                 const Icon(Icons.broken_image),
                           ),
@@ -1507,9 +1509,10 @@ class _SalesScreenState extends State<SalesScreen> {
                     color: Colors.black12,
                     child: item['image_url'] == null
                         ? const Icon(Icons.image_not_supported)
-                        : Image.network(
+                        : CachedRemoteImage(
                             item['image_url'].toString(),
                             fit: BoxFit.cover,
+                            thumbnail: true,
                             errorBuilder: (context, error, stackTrace) =>
                                 const Icon(Icons.broken_image),
                           ),

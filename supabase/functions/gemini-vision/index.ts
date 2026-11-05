@@ -5,12 +5,24 @@ import {
   type FallbackModel,
   type FallbackOutcome,
 } from "./retry.ts";
+import { MAX_REQUEST_BYTES, validateModelOutput, validateRequestBody } from "./validation.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+const localOrigins = new Set(["http://localhost", "http://127.0.0.1"]);
+const productionOrigins = (Deno.env.get("APP_ORIGINS") ?? "").split(",").map((origin) => origin.trim()).filter(Boolean);
+function corsHeaders(origin: string | null): Record<string, string> {
+  if (!origin) return { "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS", Vary: "Origin" };
+  let allowed = productionOrigins.includes(origin);
+  try {
+    const url = new URL(origin);
+    allowed ||= url.protocol === "http:" && localOrigins.has(`${url.protocol}//${url.hostname}`);
+  } catch { /* Invalid Origin is rejected. */ }
+  return {
+    ...(allowed ? { "Access-Control-Allow-Origin": origin } : {}),
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    Vary: "Origin",
+  };
+}
 
 const categories = [
   "Póló", "Galléros", "cable knit", "vékony kötött", "sleepwear", "zipup", "farmer", "nadrág",
@@ -31,7 +43,7 @@ const requestTimeoutMs = 12_000;
 const retryBaseDelayMs = 500;
 const retryMaxDelayMs = 4_000;
 const modelHealthTableFunctions = [
-  "claim_ai_model",
+  "claim_ai_model_for_edge",
   "record_ai_model_success",
   "record_ai_model_failure",
 ] as const;
@@ -68,18 +80,40 @@ class CircuitState {
 }
 
 const localCircuitState = new CircuitState();
+const healthCache = new Map<string, { value: boolean; expiresAt: number }>();
 let sharedHealthStoreUnavailable = false;
 let healthStoreWarningLogged = false;
 
-function jsonResponse(body: unknown, status = 200) {
+function jsonResponse(body: unknown, status = 200, origin: string | null = null) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(origin), "Content-Type": "application/json" },
   });
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readBodyWithinLimit(request: Request, maxBytes: number): Promise<string | null> {
+  if (!request.body) return null;
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(body); } catch { return null; }
 }
 
 async function healthRpc(functionName: (typeof modelHealthTableFunctions)[number], body: unknown) {
@@ -102,18 +136,24 @@ async function healthRpc(functionName: (typeof modelHealthTableFunctions)[number
   if (!response.ok) {
     throw new Error(`Model health RPC ${functionName} returned ${response.status}`);
   }
-  return functionName === "claim_ai_model" || functionName === "record_ai_model_failure"
+  return functionName === "claim_ai_model_for_edge" || functionName === "record_ai_model_failure"
     ? await response.json()
     : null;
 }
 
 async function modelIsAvailable(model: string): Promise<boolean> {
   if (sharedHealthStoreUnavailable) return localCircuitState.claim(model);
+  const cached = healthCache.get(model);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
   try {
-    return await healthRpc("claim_ai_model", {
+    const state = await healthRpc("claim_ai_model_for_edge", {
       p_model_name: model,
       p_probe_lease_seconds: 90,
-    }) as boolean;
+    }) as string;
+    if (state === "available") healthCache.set(model, { value: true, expiresAt: Date.now() + 5_000 });
+    if (state === "blocked") healthCache.set(model, { value: false, expiresAt: Date.now() + 5_000 });
+    // A half-open probe lease is never cached, preserving its single-caller guarantee.
+    return state === "available" || state === "probe";
   } catch (error) {
     sharedHealthStoreUnavailable = true;
     if (!healthStoreWarningLogged) {
@@ -125,6 +165,7 @@ async function modelIsAvailable(model: string): Promise<boolean> {
 }
 
 async function recordModelSuccess(model: string): Promise<void> {
+  healthCache.delete(model);
   localCircuitState.success(model);
   if (sharedHealthStoreUnavailable) return;
   try {
@@ -139,6 +180,7 @@ async function recordModelSuccess(model: string): Promise<void> {
 }
 
 async function recordModelFailure(model: string): Promise<number> {
+  healthCache.delete(model);
   const localCooldown = localCircuitState.failure(model);
   if (sharedHealthStoreUnavailable) return localCooldown;
   try {
@@ -183,7 +225,7 @@ function extractJsonObject(text: unknown): Record<string, unknown> {
   return result as Record<string, unknown>;
 }
 
-async function callGemini(model: FallbackModel, apiKey: string, prompt: string, imageBase64: string, mimeType: string) {
+async function callGemini(model: FallbackModel, apiKey: string, prompt: string, imageBase64: string, mimeType: string, signal: AbortSignal) {
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent`,
     {
@@ -193,7 +235,7 @@ async function callGemini(model: FallbackModel, apiKey: string, prompt: string, 
         contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: imageBase64 } }] }],
         generationConfig: { responseMimeType: "application/json" },
       }),
-      signal: AbortSignal.timeout(requestTimeoutMs),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(requestTimeoutMs)]),
     },
   );
 
@@ -213,7 +255,7 @@ async function callGemini(model: FallbackModel, apiKey: string, prompt: string, 
   }
 }
 
-async function callOpenAi(model: FallbackModel, apiKey: string, prompt: string, imageBase64: string, mimeType: string) {
+async function callOpenAi(model: FallbackModel, apiKey: string, prompt: string, imageBase64: string, mimeType: string, signal: AbortSignal) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
@@ -229,7 +271,7 @@ async function callOpenAi(model: FallbackModel, apiKey: string, prompt: string, 
       text: { format: { type: "json_object" } },
       max_output_tokens: 1200,
     }),
-    signal: AbortSignal.timeout(requestTimeoutMs),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(requestTimeoutMs)]),
   });
 
   if (!response.ok) {
@@ -248,16 +290,17 @@ async function callOpenAi(model: FallbackModel, apiKey: string, prompt: string, 
   }
 }
 
-async function callModel(model: FallbackModel, apiKey: string, prompt: string, imageBase64: string, mimeType: string) {
+async function callModel(model: FallbackModel, apiKey: string, prompt: string, imageBase64: string, mimeType: string, signal: AbortSignal) {
   return model.provider === "gemini"
-    ? await callGemini(model, apiKey, prompt, imageBase64, mimeType)
-    : await callOpenAi(model, apiKey, prompt, imageBase64, mimeType);
+    ? await callGemini(model, apiKey, prompt, imageBase64, mimeType, signal)
+    : await callOpenAi(model, apiKey, prompt, imageBase64, mimeType, signal);
 }
 
 async function analyzeWithFallback(
   prompt: string,
   imageBase64: string,
   mimeType: string,
+  signal: AbortSignal,
 ): Promise<FallbackOutcome<Record<string, unknown>>> {
   return runModelFallback({
     models,
@@ -266,7 +309,7 @@ async function analyzeWithFallback(
     retryMaxDelayMs,
     getApiKey: (model) => Deno.env.get(model.envKey),
     isAvailable: (model) => modelIsAvailable(model.id),
-    callModel: (model, apiKey) => callModel(model, apiKey, prompt, imageBase64, mimeType),
+    callModel: (model, apiKey) => callModel(model, apiKey, prompt, imageBase64, mimeType, signal),
     recordSuccess: (model) => recordModelSuccess(model.id),
     recordFailure: (model) => recordModelFailure(model.id),
     wait: sleep,
@@ -290,32 +333,71 @@ async function analyzeWithFallback(
 }
 
 Deno.serve(async (request) => {
-  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (request.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
+  const origin = request.headers.get("origin");
+  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(origin) });
+  if (origin && !corsHeaders(origin)["Access-Control-Allow-Origin"]) return jsonResponse({ error: "Origin not allowed" }, 403, origin);
+  if (request.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405, origin);
 
   try {
-    const body = await request.json();
-    const task = body.task;
-    const imageBase64 = body.imageBase64;
-    const mimeType = body.mimeType;
+    const authorization = request.headers.get("authorization") ?? "";
+    const tokenMatch = /^Bearer\s+(\S+)$/i.exec(authorization);
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!tokenMatch || !supabaseUrl || !anonKey) return jsonResponse({ error: "Authentication required" }, 401, origin);
+    const authResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: { apikey: anonKey, Authorization: `Bearer ${tokenMatch[1]}` },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!authResponse.ok) return jsonResponse({ error: "Authentication required" }, 401, origin);
+    const user = await authResponse.json();
+    if (typeof user?.id !== "string" || user.is_anonymous === true) return jsonResponse({ error: "Authentication required" }, 401, origin);
 
-    if (task !== "inventory" && task !== "search") {
-      return jsonResponse({ error: "Unsupported analysis task" }, 400);
+    if (!(request.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json")) {
+      return jsonResponse({ error: "Invalid request" }, 415, origin);
     }
-    if (typeof imageBase64 !== "string" || imageBase64.length === 0 || imageBase64.length > 12_000_000) {
-      return jsonResponse({ error: "Image is missing or too large" }, 400);
-    }
-    if (mimeType !== "image/jpeg" && mimeType !== "image/png" && mimeType !== "image/webp") {
-      return jsonResponse({ error: "Unsupported image type" }, 400);
-    }
+    const declaredLength = Number(request.headers.get("content-length") ?? 0);
+    if (declaredLength > MAX_REQUEST_BYTES) return jsonResponse({ error: "Invalid request" }, 413, origin);
+    const rawBody = await readBodyWithinLimit(request, MAX_REQUEST_BYTES);
+    if (rawBody === null) return jsonResponse({ error: "Invalid request" }, 413, origin);
+    let parsedBody: unknown;
+    try { parsedBody = JSON.parse(rawBody); } catch { return jsonResponse({ error: "Invalid request" }, 400, origin); }
+    const body = validateRequestBody(parsedBody);
+    if (!body) return jsonResponse({ error: "Invalid request" }, 400, origin);
 
-    const result = await analyzeWithFallback(makePrompt(task), imageBase64, mimeType);
-    if (!result.ok) return jsonResponse(result, 503);
-    // Keep the original result fields at the top level so older app builds
-    // continue to read the response, while exposing the winning model.
-    return jsonResponse({ ...result.result, _model: result.model });
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!serviceKey) return jsonResponse({ error: "Service temporarily unavailable" }, 503, origin);
+    const quotaResponse = await fetch(`${supabaseUrl}/rest/v1/rpc/consume_ai_analysis_quota`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+      body: JSON.stringify({ p_user_id: user.id }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!quotaResponse.ok) {
+      console.error("AI quota service unavailable", quotaResponse.status);
+      return jsonResponse({ error: "Service temporarily unavailable" }, 503, origin);
+    }
+    if (await quotaResponse.json() !== true) return jsonResponse({ error: "Daily analysis limit reached" }, 429, origin);
+
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), 25_000);
+    let result: FallbackOutcome<Record<string, unknown>>;
+    try {
+      result = await Promise.race([
+        analyzeWithFallback(makePrompt(body.task), body.imageBase64, body.mimeType, controller.signal),
+        new Promise<never>((_, reject) => controller.signal.addEventListener("abort", () => reject(new Error("deadline")), { once: true })),
+      ]);
+    } finally { clearTimeout(deadline); }
+    if (!result.ok) return jsonResponse({ error: "Analysis is temporarily unavailable. Please try again shortly." }, 503, origin);
+    const safeOutput = validateModelOutput(result.result, body.task, categories, genders);
+    if (!safeOutput) {
+      console.error("AI provider returned invalid structured output");
+      return jsonResponse({ error: "Could not analyze image" }, 502, origin);
+    }
+    // Keep response fields at the top level for compatibility with existing app builds.
+    return jsonResponse({ ...safeOutput, _model: result.model }, 200, origin);
   } catch (error) {
-    console.error("Gemini vision function error", error);
-    return jsonResponse({ error: "Could not analyze image" }, 500);
+    const timedOut = error instanceof Error && error.message === "deadline";
+    console.error("Image analysis request failed", timedOut ? "deadline exceeded" : error instanceof Error ? error.message : "unknown error");
+    return jsonResponse({ error: timedOut ? "Analysis timed out. Please try again." : "Could not analyze image" }, timedOut ? 504 : 500, origin);
   }
 });
