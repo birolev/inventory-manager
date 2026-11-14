@@ -308,6 +308,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
             'brand': _brandController.text,
             'price_est': double.tryParse(_priceController.text) ?? 0.0,
             'category': _selectedCategory,
+            'secondary_categories': (currentItem.aiResult?['secondary_categories'] as List? ?? [])
+                .whereType<String>()
+                .where((category) => clothingCategories.contains(category) && category != _selectedCategory)
+                .toSet()
+                .toList(),
             'gender': _selectedGender,
             'location': _selectedLocation,
             'image_url': imageUrl,

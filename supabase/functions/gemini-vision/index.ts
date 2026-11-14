@@ -199,9 +199,10 @@ async function recordModelFailure(model: string): Promise<number> {
 }
 
 function makePrompt(task: "inventory" | "search"): string {
+  const categoryGuidance = `Classify by garment type, not by every visible feature. Galléros means a polo-style shirt with a distinct collar; a jacket or coat with a collar remains dzseki or kabát. A crewneck is a sweatshirt without a hood, usually heavier than a hosszúujjú shirt. Use hosszúujjú only for a lightweight long-sleeve shirt/top. Set one best main category and include only useful overlapping alternatives in secondary_categories. Never repeat the main category.`;
   return task === "inventory"
-    ? `Analyze this clothing item in Hungarian. Choose ONE category from: ${categories.join(", ")}, and choose its gender from: ${genders.join(", ")}. Return a JSON object with name (string), brand (string), category (string), gender (string), price (number), color (string), pattern (string), condition (string, e.g. 'Új', 'Kiváló', 'Használt'), and size (string).`
-    : `Analyze this clothing item. Identify its category (choose EXACTLY ONE from: ${categories.join(", ")}) and gender (choose EXACTLY ONE from: ${genders.join(", ")}), its main color in Hungarian, and its pattern in Hungarian. Return a JSON object with category (string), gender (string), color (string), and pattern (string).`;
+    ? `Analyze this clothing item in Hungarian. ${categoryGuidance} Choose main category from: ${categories.join(", ")}; secondary_categories must be an array of zero or more values from the same list. Choose gender from: ${genders.join(", ")}. Return JSON with name, brand, category, secondary_categories, gender, price, color, pattern, condition, and size.`
+    : `Analyze this clothing item. ${categoryGuidance} Choose main category from: ${categories.join(", ")}; secondary_categories must be an array of zero or more values from the same list. Choose gender from: ${genders.join(", ")}. Return JSON with category, secondary_categories, gender, color, and pattern.`;
 }
 
 async function readProviderError(response: Response): Promise<string> {

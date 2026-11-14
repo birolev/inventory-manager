@@ -55,7 +55,11 @@ class InventorySearch {
     required String id,
   }) {
     if (!sortableColumns.contains(sortColumn)) {
-      throw ArgumentError.value(sortColumn, 'sortColumn', 'Unsupported sort column');
+      throw ArgumentError.value(
+        sortColumn,
+        'sortColumn',
+        'Unsupported sort column',
+      );
     }
     if (sortValue == null) return 'and($sortColumn.is.null,id.gt.$id)';
     final operator = ascending ? 'gt' : 'lt';
@@ -65,7 +69,17 @@ class InventorySearch {
 
   static const _colorFamilies = <List<String>>[
     ['kék', 'kek', 'blue', 'navy', 'tengerészkék', 'azúr', 'türkiz', 'cyan'],
-    ['pink', 'rózsaszín', 'rozsaszin', 'magenta', 'magneta', 'fukszia', 'fuchsia', 'ciklámen', 'ciklamen'],
+    [
+      'pink',
+      'rózsaszín',
+      'rozsaszin',
+      'magenta',
+      'magneta',
+      'fukszia',
+      'fuchsia',
+      'ciklámen',
+      'ciklamen',
+    ],
     ['piros', 'vörös', 'voros', 'red', 'bordó', 'bordo', 'burgundy'],
     ['zöld', 'zold', 'green', 'olíva', 'oliva', 'khaki'],
     ['sárga', 'sarga', 'yellow', 'mustár', 'mustard'],
@@ -91,19 +105,27 @@ class InventorySearch {
     if (criteria.maxResults != null && criteria.maxResults! <= 0) return [];
     final results = <Map<String, dynamic>>[];
     if (!sortableColumns.contains(criteria.sortColumn)) {
-      throw ArgumentError.value(criteria.sortColumn, 'sortColumn', 'Unsupported sort column');
+      throw ArgumentError.value(
+        criteria.sortColumn,
+        'sortColumn',
+        'Unsupported sort column',
+      );
     }
     final pageSize = criteria.pageSize.clamp(1, 1000).toInt();
     String? cursorSortValue;
     String? cursorId;
 
     while (true) {
-      dynamic query = Supabase.instance.client.from('inventory').select(columns);
+      dynamic query = Supabase.instance.client
+          .from('inventory')
+          .select(columns);
       if (criteria.onlyUnsold) query = query.eq('is_sold', false);
 
       final category = criteria.category?.trim() ?? '';
       if (category.isNotEmpty && category != 'Minden') {
-        query = query.eq('category', category);
+        query = query.or(
+          'category.eq.$category,secondary_categories.cs.{${category}}',
+        );
       }
       final gender = criteria.gender?.trim() ?? '';
       if (!criteria.fallback && gender.isNotEmpty && gender != 'Minden') {
@@ -154,9 +176,7 @@ class InventorySearch {
 
       final currentPageSize = criteria.maxResults == null
           ? pageSize
-          : (criteria.maxResults! - results.length)
-                .clamp(1, pageSize)
-                .toInt();
+          : (criteria.maxResults! - results.length).clamp(1, pageSize).toInt();
       final page = await query
           .order(
             criteria.sortColumn,
@@ -177,6 +197,14 @@ class InventorySearch {
       cursorSortValue = lastRow[criteria.sortColumn]?.toString();
       cursorId = lastRow['id']?.toString();
       if (cursorId == null) break;
+    }
+    final category = criteria.category?.trim() ?? '';
+    if (category.isNotEmpty && category != 'Minden') {
+      results.sort((a, b) {
+        final aMain = a['category'] == category ? 0 : 1;
+        final bMain = b['category'] == category ? 0 : 1;
+        return aMain.compareTo(bMain);
+      });
     }
     return results;
   }
