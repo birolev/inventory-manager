@@ -1,6 +1,6 @@
 {
   "devDependencies": {
-    "netlify-cli": "^27.13.0",
-    "supabase": "^2.121.0"
+    "netlify-cli": "^27.16.1",
+    "supabase": "^2.122.0"
   }
 }
