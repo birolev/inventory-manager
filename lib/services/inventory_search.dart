@@ -124,7 +124,7 @@ class InventorySearch {
       final category = criteria.category?.trim() ?? '';
       if (category.isNotEmpty && category != 'Minden') {
         query = query.or(
-          'category.eq.$category,secondary_categories.cs.{${category}}',
+          'category.eq.$category,secondary_categories.cs.{$category}',
         );
       }
       final gender = criteria.gender?.trim() ?? '';

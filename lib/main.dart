@@ -77,7 +77,7 @@ void main() async {
   _logAuthCallback(callbackUri, phase: 'beforeInitialize');
   await Supabase.initialize(
     url: supabaseUrl,
-    anonKey: supabaseAnonKey,
+    publishableKey: supabaseAnonKey,
     authOptions: const FlutterAuthClientOptions(
       authFlowType: AuthFlowType.implicit,
     ),
