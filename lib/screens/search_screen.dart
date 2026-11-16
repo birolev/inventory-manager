@@ -292,6 +292,55 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
+  Future<void> _removeAiSearchFilter(String filter) async {
+    if (_isSearching) return;
+    setState(() {
+      switch (filter) {
+        case 'category':
+          _selectedCategory = 'Minden';
+          break;
+        case 'gender':
+          _selectedGender = 'Minden';
+          break;
+        case 'color':
+          _selectedColor = '';
+          _colorController.clear();
+          break;
+        case 'pattern':
+          _selectedPattern = '';
+          _patternController.clear();
+          break;
+        case 'brand':
+          _selectedBrand = '';
+          _brandController.clear();
+          break;
+      }
+    });
+    await _searchInventory();
+  }
+
+  List<({String key, String label, String value})> _activeAiSearchFilters() {
+    final filters = <({String key, String label, String value})>[];
+    if (_selectedCategory != 'Minden') {
+      filters.add(
+        (key: 'category', label: 'Kategória', value: _selectedCategory),
+      );
+    }
+    if (_selectedGender != 'Minden') {
+      filters.add((key: 'gender', label: 'Nem', value: _selectedGender));
+    }
+    if (_selectedColor.trim().isNotEmpty) {
+      filters.add((key: 'color', label: 'Szín', value: _selectedColor.trim()));
+    }
+    if (_selectedPattern.trim().isNotEmpty) {
+      filters.add((key: 'pattern', label: 'Minta', value: _selectedPattern.trim()));
+    }
+    if (_selectedBrand.trim().isNotEmpty) {
+      filters.add((key: 'brand', label: 'Márka', value: _selectedBrand.trim()));
+    }
+    return filters;
+  }
+
   Future<List<dynamic>> _runInventoryQuery({bool fallback = false}) async {
     return InventorySearch.search(
       InventorySearchCriteria(
@@ -730,33 +779,32 @@ class _SearchScreenState extends State<SearchScreen> {
                                     ),
                                   if (_aiCriteria != null) ...[
                                     const Text(
-                                      "AI Keresési szűrők:",
+                                      "AI match:",
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 12,
                                         color: Colors.grey,
                                       ),
                                     ),
-                                    ..._aiCriteria!.entries.map((entry) {
-                                      final label = switch (entry.key) {
-                                        'category' => 'Főkategória',
-                                        'secondary_categories' =>
-                                          'Másodlagos kategóriák',
-                                        'gender' => 'Nem',
-                                        'color' => 'Szín',
-                                        'pattern' => 'Minta',
-                                        _ => entry.key,
-                                      };
-                                      final value = entry.value is List
-                                          ? (entry.value as List).join(', ')
-                                          : entry.value?.toString() ?? '';
-                                      return Text(
-                                        '$label: ${value.isEmpty ? '(üres)' : value}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      );
-                                    }),
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 0,
+                                      children: _activeAiSearchFilters()
+                                          .map((filter) {
+                                            return InputChip(
+                                              label: Text(
+                                                '${filter.label}: ${filter.value}',
+                                              ),
+                                              onDeleted: _isSearching
+                                                  ? null
+                                                  : () =>
+                                                        _removeAiSearchFilter(
+                                                          filter.key,
+                                                        ),
+                                            );
+                                          })
+                                          .toList(),
+                                    ),
                                   ],
                                 ],
                               ),
