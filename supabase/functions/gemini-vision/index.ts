@@ -5,7 +5,7 @@ import {
   type FallbackModel,
   type FallbackOutcome,
 } from "./retry.ts";
-import { MAX_REQUEST_BYTES, validateModelOutput, validateRequestBody } from "./validation.ts";
+import { MAX_REQUEST_BYTES, modelOutputValidationError, validateModelOutput, validateRequestBody } from "./validation.ts";
 
 const localOrigins = new Set(["http://localhost", "http://127.0.0.1"]);
 const productionOrigins = (Deno.env.get("APP_ORIGINS") ?? "").split(",").map((origin) => origin.trim()).filter(Boolean);
@@ -42,6 +42,7 @@ const attemptsPerModel = 3;
 const requestTimeoutMs = 12_000;
 const retryBaseDelayMs = 500;
 const retryMaxDelayMs = 4_000;
+const logInvalidAiOutputs = Deno.env.get("LOG_INVALID_AI_OUTPUTS") === "true";
 const modelHealthTableFunctions = [
   "claim_ai_model_for_edge",
   "record_ai_model_success",
@@ -199,7 +200,7 @@ async function recordModelFailure(model: string): Promise<number> {
 }
 
 function makePrompt(task: "inventory" | "search"): string {
-  const categoryGuidance = `Classify by garment type, not by every visible feature. Galléros means a polo-style shirt with a distinct collar; a jacket or coat with a collar remains dzseki or kabát. A crewneck is a sweatshirt without a hood, usually heavier than a hosszúujjú shirt. Use hosszúujjú only for a lightweight long-sleeve shirt/top. Set one best main category and include only useful overlapping alternatives in secondary_categories. Never repeat the main category.`;
+  const categoryGuidance = `Classify by garment type, not by every visible feature. Galléros means a polo-style shirt with a distinct collar; a jacket or coat with a collar remains dzseki or kabát. A crewneck is a sweatshirt without a hood, usually heavier than a hosszúujjú shirt. Use hosszúujjú only for a lightweight long-sleeve shirt/top. Set one best main category and include only useful overlapping alternatives in secondary_categories. Never repeat the main category. For category and gender, copy one allowed value exactly, including accents. Use strings for descriptive fields, a number for price, and an array of strings for secondary_categories. Use an empty string for unknown descriptive values and 0 for unknown price. Return only one JSON object with the requested keys; do not add explanations, markdown, or other keys.`;
   return task === "inventory"
     ? `Analyze this clothing item in Hungarian. ${categoryGuidance} Choose main category from: ${categories.join(", ")}; secondary_categories must be an array of zero or more values from the same list. Choose gender from: ${genders.join(", ")}. Return JSON with name, brand, category, secondary_categories, gender, price, color, pattern, condition, and size.`
     : `Analyze this clothing item. ${categoryGuidance} Choose main category from: ${categories.join(", ")}; secondary_categories must be an array of zero or more values from the same list. Choose gender from: ${genders.join(", ")}. Return JSON with category, secondary_categories, gender, color, and pattern.`;
@@ -224,6 +225,17 @@ function extractJsonObject(text: unknown): Record<string, unknown> {
     throw new Error("Model returned invalid JSON output");
   }
   return result as Record<string, unknown>;
+}
+
+function logInvalidOutput(model: string, task: "inventory" | "search", reason: string, output: unknown): void {
+  const outputText = typeof output === "string" ? output : JSON.stringify(output);
+  console.error(JSON.stringify({
+    event: "invalid_ai_structured_output",
+    model,
+    task,
+    reason,
+    ...(logInvalidAiOutputs ? { output: (outputText ?? "<unserializable>").slice(0, 6000), output_truncated: (outputText?.length ?? 0) > 6000 } : {}),
+  }));
 }
 
 async function callGemini(model: FallbackModel, apiKey: string, prompt: string, imageBase64: string, mimeType: string, signal: AbortSignal) {
@@ -252,7 +264,7 @@ async function callGemini(model: FallbackModel, apiKey: string, prompt: string, 
   try {
     return extractJsonObject(text);
   } catch (error) {
-    throw new ProviderError(String(error), model.provider, model.id, 502, true);
+    throw new ProviderError(String(error), model.provider, model.id, 502, true, false);
   }
 }
 
@@ -287,20 +299,28 @@ async function callOpenAi(model: FallbackModel, apiKey: string, prompt: string, 
   try {
     return extractJsonObject(text);
   } catch (error) {
-    throw new ProviderError(String(error), model.provider, model.id, 502, true);
+    throw new ProviderError(String(error), model.provider, model.id, 502, true, false);
   }
 }
 
-async function callModel(model: FallbackModel, apiKey: string, prompt: string, imageBase64: string, mimeType: string, signal: AbortSignal) {
-  return model.provider === "gemini"
+async function callModel(model: FallbackModel, apiKey: string, prompt: string, imageBase64: string, mimeType: string, task: "inventory" | "search", signal: AbortSignal) {
+  const result = model.provider === "gemini"
     ? await callGemini(model, apiKey, prompt, imageBase64, mimeType, signal)
     : await callOpenAi(model, apiKey, prompt, imageBase64, mimeType, signal);
+  if (!validateModelOutput(result, task, categories, genders)) {
+    logInvalidOutput(model.id, task, modelOutputValidationError(result, task, categories, genders) ?? "unknown validation failure", result);
+    // A parsed JSON response can still violate the app's schema. Treat that
+    // model's result as unusable so runModelFallback can try the next provider.
+    throw new ProviderError("Model returned invalid structured output", model.provider, model.id, 422, true, false);
+  }
+  return result;
 }
 
 async function analyzeWithFallback(
   prompt: string,
   imageBase64: string,
   mimeType: string,
+  task: "inventory" | "search",
   signal: AbortSignal,
 ): Promise<FallbackOutcome<Record<string, unknown>>> {
   return runModelFallback({
@@ -310,7 +330,7 @@ async function analyzeWithFallback(
     retryMaxDelayMs,
     getApiKey: (model) => Deno.env.get(model.envKey),
     isAvailable: (model) => modelIsAvailable(model.id),
-    callModel: (model, apiKey) => callModel(model, apiKey, prompt, imageBase64, mimeType, signal),
+    callModel: (model, apiKey) => callModel(model, apiKey, prompt, imageBase64, mimeType, task, signal),
     recordSuccess: (model) => recordModelSuccess(model.id),
     recordFailure: (model) => recordModelFailure(model.id),
     wait: sleep,
@@ -384,14 +404,14 @@ Deno.serve(async (request) => {
     let result: FallbackOutcome<Record<string, unknown>>;
     try {
       result = await Promise.race([
-        analyzeWithFallback(makePrompt(body.task), body.imageBase64, body.mimeType, controller.signal),
+        analyzeWithFallback(makePrompt(body.task), body.imageBase64, body.mimeType, body.task, controller.signal),
         new Promise<never>((_, reject) => controller.signal.addEventListener("abort", () => reject(new Error("deadline")), { once: true })),
       ]);
     } finally { clearTimeout(deadline); }
     if (!result.ok) return jsonResponse({ error: "Analysis is temporarily unavailable. Please try again shortly." }, 503, origin);
     const safeOutput = validateModelOutput(result.result, body.task, categories, genders);
     if (!safeOutput) {
-      console.error("AI provider returned invalid structured output");
+      console.error("AI provider returned invalid structured output after fallback");
       return jsonResponse({ error: "Could not analyze image" }, 502, origin);
     }
     // Keep response fields at the top level for compatibility with existing app builds.

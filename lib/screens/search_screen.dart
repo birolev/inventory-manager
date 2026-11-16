@@ -737,12 +737,26 @@ class _SearchScreenState extends State<SearchScreen> {
                                         color: Colors.grey,
                                       ),
                                     ),
-                                    Text(
-                                      "${_aiCriteria!['category']} | ${_aiCriteria!['gender']} | ${_aiCriteria!['color']} | ${_aiCriteria!['pattern']}",
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
+                                    ..._aiCriteria!.entries.map((entry) {
+                                      final label = switch (entry.key) {
+                                        'category' => 'Főkategória',
+                                        'secondary_categories' =>
+                                          'Másodlagos kategóriák',
+                                        'gender' => 'Nem',
+                                        'color' => 'Szín',
+                                        'pattern' => 'Minta',
+                                        _ => entry.key,
+                                      };
+                                      final value = entry.value is List
+                                          ? (entry.value as List).join(', ')
+                                          : entry.value?.toString() ?? '';
+                                      return Text(
+                                        '$label: ${value.isEmpty ? '(üres)' : value}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      );
+                                    }),
                                   ],
                                 ],
                               ),

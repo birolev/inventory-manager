@@ -34,10 +34,13 @@ Deno.test("rejects unknown request fields and missing image", () => {
 });
 
 Deno.test("accepts only strict, bounded model output", () => {
-  const valid = { category: "other", gender: "fÃ©rfi", color: "kÃ©k", pattern: "plain" };
+  const valid = { category: "other", gender: "fÃ©rfi", color: "kÃ©k", pattern: "plain", secondary_categories: ["PÃ³lÃ³"] };
   if (!validateModelOutput(valid, "search", categories, genders)) throw new Error("valid output rejected");
-  if (validateModelOutput({ ...valid, extra: "injected" }, "search", categories, genders)) throw new Error("extra model field accepted");
+  const withExtra = validateModelOutput({ ...valid, extra: "provider metadata" }, "search", categories, genders);
+  if (!withExtra || Object.hasOwn(withExtra, "extra")) throw new Error("extra model field was not safely discarded");
   if (validateModelOutput({ ...valid, category: "not a category" }, "search", categories, genders)) throw new Error("invalid category accepted");
+  if (validateModelOutput({ ...valid, secondary_categories: ["other"] }, "search", categories, genders)) throw new Error("main category repeated in secondary categories");
+  if (validateModelOutput({ ...valid, secondary_categories: ["PÃ³lÃ³", "PÃ³lÃ³"] }, "search", categories, genders)) throw new Error("duplicate secondary category accepted");
 });
 
 Deno.test("rejects unsupported image bytes", () => {

@@ -11,6 +11,7 @@ export class ProviderError extends Error {
     readonly model: string,
     readonly status: number | null,
     readonly retryable: boolean,
+    readonly cooldownEligible = true,
   ) {
     super(message);
   }
@@ -114,8 +115,15 @@ export async function runModelFallback<T>(
           continue;
         }
 
-        const cooldownMs = await options.recordFailure(model);
-        options.onEvent?.({ type: "cooldown", model: model.id, cooldownMs });
+        if (providerError.cooldownEligible) {
+          const cooldownMs = await options.recordFailure(model);
+          options.onEvent?.({ type: "cooldown", model: model.id, cooldownMs });
+        } else {
+          // The provider was reachable and returned content, but its content
+          // failed validation. Clear any half-open probe lease without adding
+          // an infrastructure cooldown.
+          await options.recordSuccess(model);
+        }
         break;
       }
     }

@@ -1,4 +1,4 @@
-package com.example.yoaron_app
+package com.yoaron.inventory
 
 import io.flutter.embedding.android.FlutterActivity
 

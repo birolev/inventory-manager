@@ -68,15 +68,75 @@ export function validateModelOutput(value: unknown, task: AnalysisTask, categori
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   const input = value as Record<string, unknown>;
   const fields = task === "inventory"
-    ? ["name", "brand", "category", "gender", "price", "color", "pattern", "condition", "size"]
-    : ["category", "gender", "color", "pattern"];
-  if (Object.keys(input).some((key) => !fields.includes(key))) return null;
-  if (fields.some((key) => !Object.hasOwn(input, key))) return null;
-  const strings = task === "inventory" ? fields.filter((key) => key !== "price") : fields;
-  if (strings.some((key) => typeof input[key] !== "string" || (input[key] as string).length > 200)) return null;
-  if (!categories.includes(input.category as string) || !genders.includes(input.gender as string)) return null;
-  if (task === "inventory" && (typeof input.price !== "number" || !Number.isFinite(input.price) || input.price < 0 || input.price > 1_000_000)) return null;
-  return Object.fromEntries(fields.map((key) => [key, input[key]]));
+    ? ["name", "brand", "category", "gender", "price", "color", "pattern", "condition", "size", "secondary_categories"]
+    : ["category", "gender", "color", "pattern", "secondary_categories"];
+  // JSON mode does not constrain the provider to an exact schema. Ignore extra
+  // properties and normalize harmless formatting differences in enum values.
+  const normalize = (value: unknown, choices: readonly string[]) => {
+    if (typeof value !== "string") return undefined;
+    const key = value.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
+    return choices.find((choice) => choice.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase() === key);
+  };
+  const category = normalize(input.category, categories);
+  const gender = normalize(input.gender, genders);
+  if (!category || !gender) return null;
+
+  const strings = fields.filter((key) => !["price", "secondary_categories", "category", "gender"].includes(key));
+  const normalizedStrings: Record<string, string> = {};
+  for (const key of strings) {
+    const field = input[key];
+    if (field == null) {
+      normalizedStrings[key] = "";
+    } else if (typeof field === "string" && field.length <= 500) {
+      normalizedStrings[key] = field.trim();
+    } else {
+      return null;
+    }
+  }
+
+  const secondaryCategories = Array.isArray(input.secondary_categories)
+    ? [...new Set(input.secondary_categories
+      .map((item) => normalize(item, categories))
+      .filter((item): item is string => Boolean(item) && item !== category))]
+    : [];
+  let price = 0;
+  if (task === "inventory" && input.price != null) {
+    price = typeof input.price === "number" ? input.price : typeof input.price === "string" ? Number(input.price.trim()) : NaN;
+    if (!Number.isFinite(price) || price < 0 || price > 1_000_000) return null;
+  }
+  return {
+    ...normalizedStrings,
+    category,
+    gender,
+    ...(task === "inventory" ? { price } : {}),
+    secondary_categories: secondaryCategories,
+  };
+}
+
+export function modelOutputValidationError(value: unknown, task: AnalysisTask, categories: readonly string[], genders: readonly string[]): string | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return "response is not a JSON object";
+  const input = value as Record<string, unknown>;
+  const normalize = (entry: unknown, choices: readonly string[]) => {
+    if (typeof entry !== "string") return undefined;
+    const key = entry.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
+    return choices.find((choice) => choice.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase() === key);
+  };
+  if (!normalize(input.category, categories)) return `category is not one of the allowed values (received ${JSON.stringify(input.category)?.slice(0, 120) ?? "undefined"})`;
+  if (!normalize(input.gender, genders)) return `gender is not one of the allowed values (received ${JSON.stringify(input.gender)?.slice(0, 120) ?? "undefined"})`;
+  const fields = task === "inventory"
+    ? ["name", "brand", "color", "pattern", "condition", "size"]
+    : ["color", "pattern"];
+  for (const field of fields) {
+    const entry = input[field];
+    if (entry != null && (typeof entry !== "string" || entry.length > 500)) {
+      return `${field} must be a string of at most 500 characters (received ${typeof entry})`;
+    }
+  }
+  if (task === "inventory" && input.price != null) {
+    const price = typeof input.price === "number" ? input.price : typeof input.price === "string" ? Number(input.price.trim()) : NaN;
+    if (!Number.isFinite(price) || price < 0 || price > 1_000_000) return "price is not a finite number between 0 and 1000000";
+  }
+  return null;
 }
 
 export function validateRequestBody(value: unknown): { task: AnalysisTask; imageBase64: string; mimeType: string } | null {
