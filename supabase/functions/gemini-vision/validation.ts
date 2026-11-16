@@ -94,11 +94,18 @@ export function validateModelOutput(value: unknown, task: AnalysisTask, categori
     }
   }
 
-  const secondaryCategories = Array.isArray(input.secondary_categories)
-    ? [...new Set(input.secondary_categories
-      .map((item) => normalize(item, categories))
-      .filter((item): item is string => Boolean(item) && item !== category))]
-    : [];
+  if (!Array.isArray(input.secondary_categories)) return null;
+  const secondaryCategories: string[] = [];
+  for (const item of input.secondary_categories) {
+    const secondaryCategory = normalize(item, categories);
+    if (
+      !secondaryCategory || secondaryCategory === category ||
+      secondaryCategories.includes(secondaryCategory)
+    ) {
+      return null;
+    }
+    secondaryCategories.push(secondaryCategory);
+  }
   let price = 0;
   if (task === "inventory" && input.price != null) {
     price = typeof input.price === "number" ? input.price : typeof input.price === "string" ? Number(input.price.trim()) : NaN;
