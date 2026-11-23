@@ -222,6 +222,47 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     setState(() => _visibleDuplicatePairs = visiblePairs);
   }
 
+  String? _duplicatePairKey(Map<String, dynamic> pair) {
+    final first = Map<String, dynamic>.from(pair['first_item'] as Map);
+    final second = Map<String, dynamic>.from(pair['second_item'] as Map);
+    final firstId = first['id']?.toString();
+    final secondId = second['id']?.toString();
+    if (firstId == null || secondId == null || firstId == secondId) return null;
+    final sorted = [firstId, secondId]..sort();
+    return '${sorted[0]}|${sorted[1]}';
+  }
+
+  Future<void> _ignoreDuplicatePair(Map<String, dynamic> pair) async {
+    final first = Map<String, dynamic>.from(pair['first_item'] as Map);
+    final second = Map<String, dynamic>.from(pair['second_item'] as Map);
+    final firstId = first['id']?.toString();
+    final secondId = second['id']?.toString();
+    final pairKey = _duplicatePairKey(pair);
+    if (firstId == null || secondId == null || pairKey == null) return;
+
+    try {
+      await Supabase.instance.client
+          .from('inventory_duplicate_exclusions')
+          .insert({'item_a': firstId, 'item_b': secondId});
+      if (!mounted) return;
+      _duplicatePairs.removeWhere(
+        (candidate) => _duplicatePairKey(candidate) == pairKey,
+      );
+      _applyDuplicateFilter();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This pair will be hidden from duplicate results.'),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not exclude this pair: $error')),
+        );
+      }
+    }
+  }
+
   Widget _buildDuplicatePairCard(Map<String, dynamic> pair, int index) {
     final first = Map<String, dynamic>.from(pair['first_item'] as Map);
     final second = Map<String, dynamic>.from(pair['second_item'] as Map);
@@ -235,9 +276,13 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
           ListTile(
             dense: true,
             title: Text('Possible match ${index + 1}'),
-            trailing: Text(
-              '${similarity.toStringAsFixed(0)}% name match',
-              style: Theme.of(context).textTheme.labelMedium,
+            subtitle: Text(
+              '${similarity.toStringAsFixed(0)}% description match',
+            ),
+            trailing: TextButton.icon(
+              onPressed: () => _ignoreDuplicatePair(pair),
+              icon: const Icon(Icons.not_interested, size: 18),
+              label: const Text('Not a duplicate'),
             ),
           ),
           const Divider(height: 1),
