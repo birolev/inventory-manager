@@ -31,6 +31,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   String _selectedColorFilter = '';
   String _selectedPatternFilter = '';
   bool _isAnalyzingPhoto = false;
+  bool _isCheckingDuplicates = false;
   bool _usedFallback = false;
   File? _searchImage;
   final ImagePicker _imagePicker = ImagePicker();
@@ -159,6 +160,91 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       }
     } finally {
       if (mounted) setState(() => _isAnalyzingPhoto = false);
+    }
+  }
+
+  Future<void> _checkPossibleDuplicates() async {
+    setState(() => _isCheckingDuplicates = true);
+    try {
+      final response = await Supabase.instance.client.rpc(
+        'find_possible_inventory_duplicates',
+      );
+      final pairs = (response as List)
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList();
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('Possible duplicates (${pairs.length})'),
+          content: SizedBox(
+            width: 560,
+            child: pairs.isEmpty
+                ? const Text('No likely duplicate items found.')
+                : ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: pairs.length,
+                    separatorBuilder: (_, __) => const Divider(height: 20),
+                    itemBuilder: (context, index) {
+                      final pair = pairs[index];
+                      final first = Map<String, dynamic>.from(
+                        pair['first_item'] as Map,
+                      );
+                      final second = Map<String, dynamic>.from(
+                        pair['second_item'] as Map,
+                      );
+                      final similarity =
+                          ((pair['description_similarity'] as num?)?.toDouble() ??
+                              0) *
+                          100;
+                      String details(Map<String, dynamic> item) => [
+                        item['brand'],
+                        item['color'],
+                        '${item['price_est'] ?? '-'} Ft',
+                        item['location'],
+                      ].where((value) =>
+                          value != null && value.toString().isNotEmpty).join(' · ');
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${similarity.toStringAsFixed(0)}% description match',
+                            style: Theme.of(context).textTheme.labelMedium,
+                          ),
+                          const SizedBox(height: 6),
+                          ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(first['name']?.toString() ?? 'Unnamed item'),
+                            subtitle: Text(details(first)),
+                          ),
+                          ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(second['name']?.toString() ?? 'Unnamed item'),
+                            subtitle: Text(details(second)),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not check duplicates: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isCheckingDuplicates = false);
     }
   }
 
@@ -644,6 +730,19 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   );
                   if (recorded == true) _fetchInventory();
                 },
+              ),
+              IconButton(
+                tooltip: 'Check for possible duplicates',
+                icon: _isCheckingDuplicates
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.content_copy),
+                onPressed: _isCheckingDuplicates
+                    ? null
+                    : _checkPossibleDuplicates,
               ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.sort),

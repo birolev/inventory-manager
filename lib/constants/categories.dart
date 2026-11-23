@@ -18,6 +18,7 @@ const List<String> clothingCategories = [
   'cipő',
   'mellény',
   'ing',
+  'zakó/öltöny',
   'crewneck',
   'kabát',
   'szoknya',
