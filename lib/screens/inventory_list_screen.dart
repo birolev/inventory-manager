@@ -1076,6 +1076,14 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                 ),
               ),
               if (_showingDuplicates)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 6),
+                  child: Text(
+                    'Matches require the same brand, exact price, category, and color family, plus a similar description.',
+                    style: TextStyle(fontSize: 12, color: Colors.blueGrey),
+                  ),
+                ),
+              if (_showingDuplicates)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Wrap(
