@@ -184,7 +184,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                 : ListView.separated(
                     shrinkWrap: true,
                     itemCount: pairs.length,
-                    separatorBuilder: (_, __) => const Divider(height: 20),
+                    separatorBuilder: (_, _) => const Divider(height: 20),
                     itemBuilder: (context, index) {
                       final pair = pairs[index];
                       final first = Map<String, dynamic>.from(
