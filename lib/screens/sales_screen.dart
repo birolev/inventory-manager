@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -7,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yoaron_app/constants/categories.dart';
 import 'package:yoaron_app/widgets/cached_remote_image.dart';
 import '../services/inventory_search.dart';
+import '../services/image_inventory_search.dart';
 
 class _SalePhoto {
   _SalePhoto(this.file);
@@ -301,44 +301,21 @@ class _SalesScreenState extends State<SalesScreen> {
 
     try {
       final bytes = await photo.file.readAsBytes();
-      final response = await Supabase.instance.client.functions.invoke(
-        'gemini-vision',
-        body: {
-          'task': 'search',
-          'imageBase64': base64Encode(bytes),
-          'mimeType': _mimeTypeFor(photo.file),
-        },
+      final result = await ImageInventorySearch.analyzeAndSearch(
+        imageBytes: bytes,
+        mimeType: _mimeTypeFor(photo.file),
+        criteriaFor: (criteria) => _criteriaFromPhotoAnalysis(photo, criteria),
       );
-      if (response.status != 200) {
-        throw Exception('Image analysis failed: ${response.data}');
-      }
-
-      final criteria = Map<String, dynamic>.from(response.data as Map);
-      final detectedCategory = _normalizeOption(
-        criteria['category'],
-        clothingCategories,
-      );
-      final detectedGender = _normalizeGender(criteria['gender']);
-      final gender = detectedGender.isNotEmpty
-          ? detectedGender
-          : _normalizeGender(criteria['category']);
       if (!mounted) return;
       setState(() {
         photo.bytes = bytes;
-        photo.aiCriteria = criteria;
-        photo.selectedCategory = detectedCategory.isNotEmpty
-            ? detectedCategory
-            : 'Minden';
-        photo.selectedGender = genderOptions.contains(gender)
-            ? gender
-            : 'Minden';
-        photo.brandFilter = criteria['brand']?.toString() ?? '';
-        photo.colorFilter = criteria['color']?.toString() ?? '';
-        photo.patternFilter = criteria['pattern']?.toString() ?? '';
-        photo.sizeFilter = criteria['size']?.toString() ?? '';
+        photo.aiCriteria = result.aiCriteria;
+        _applyPhotoSearchCriteria(photo, result.criteria);
+        photo.matches = result.matches;
+        photo.usedFallback = result.usedFallback;
+        photo.isAnalyzing = false;
         _sizeFilterController.text = photo.sizeFilter;
       });
-      await _refreshPhotoMatches(photo);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -380,35 +357,72 @@ class _SalesScreenState extends State<SalesScreen> {
     return '';
   }
 
-  Future<List<Map<String, dynamic>>> _findMatches(
-    _SalePhoto photo, {
-    bool fallback = false,
-  }) async {
+  InventorySearchCriteria _criteriaForPhoto(_SalePhoto photo) {
     final (sortColumn, ascending) = switch (_sortOption) {
       'oldest' => ('created_at', true),
       'price_low' => ('price_est', true),
       'price_high' => ('price_est', false),
       _ => ('created_at', false),
     };
-
-    return InventorySearch.search(
-      InventorySearchCriteria(
-        category: photo.selectedCategory,
-        gender: photo.selectedGender,
-        location: photo.locationFilter,
-        brand: photo.brandFilter,
-        size: photo.sizeFilter,
-        color: photo.colorFilter,
-        pattern: photo.patternFilter,
-        name: photo.nameFilter,
-        condition: photo.conditionFilter,
-        onlyUnsold: true,
-        fallback: fallback,
-        sortColumn: sortColumn,
-        ascending: ascending,
-        maxResults: 100,
-      ),
+    return InventorySearchCriteria(
+      category: photo.selectedCategory,
+      gender: photo.selectedGender,
+      location: photo.locationFilter,
+      brand: photo.brandFilter,
+      size: photo.sizeFilter,
+      color: photo.colorFilter,
+      pattern: photo.patternFilter,
+      name: photo.nameFilter,
+      condition: photo.conditionFilter,
+      onlyUnsold: true,
+      sortColumn: sortColumn,
+      ascending: ascending,
+      maxResults: 100,
     );
+  }
+
+  InventorySearchCriteria _criteriaFromPhotoAnalysis(
+    _SalePhoto photo,
+    Map<String, dynamic> aiCriteria,
+  ) {
+    final category = _normalizeOption(
+      aiCriteria['category'],
+      clothingCategories,
+    );
+    final detectedGender = _normalizeGender(aiCriteria['gender']);
+    final gender = detectedGender.isNotEmpty
+        ? detectedGender
+        : _normalizeGender(aiCriteria['category']);
+    final base = _criteriaForPhoto(photo);
+    return InventorySearchCriteria(
+      category: category.isEmpty ? 'Minden' : category,
+      gender: genderOptions.contains(gender) ? gender : 'Minden',
+      location: photo.locationFilter,
+      brand: aiCriteria['brand']?.toString() ?? '',
+      size: aiCriteria['size']?.toString() ?? '',
+      color: aiCriteria['color']?.toString() ?? '',
+      pattern: aiCriteria['pattern']?.toString() ?? '',
+      onlyUnsold: true,
+      sortColumn: base.sortColumn,
+      ascending: base.ascending,
+      maxResults: 100,
+    );
+  }
+
+  void _applyPhotoSearchCriteria(
+    _SalePhoto photo,
+    InventorySearchCriteria criteria,
+  ) {
+    photo.selectedCategory = criteria.category ?? 'Minden';
+    photo.selectedGender = criteria.gender ?? 'Minden';
+    photo.locationFilter = criteria.location ?? 'All locations';
+    photo.brandFilter = criteria.brand ?? '';
+    photo.sizeFilter = criteria.size ?? '';
+    photo.colorFilter = criteria.color ?? '';
+    photo.patternFilter = criteria.pattern ?? '';
+    photo.nameFilter = criteria.name ?? '';
+    photo.conditionFilter = criteria.condition ?? '';
+    if (criteria.fallback) photo.filterRevision++;
   }
 
   Future<void> _refreshPhotoMatches(_SalePhoto photo) async {
@@ -417,31 +431,23 @@ class _SalesScreenState extends State<SalesScreen> {
       photo.error = null;
     });
     try {
-      var matches = await _findMatches(photo);
-      var usedFallback = false;
-
-      if (matches.isEmpty) {
-        matches = await _findMatches(photo, fallback: true);
-        usedFallback = true;
-        photo.selectedGender = 'Minden';
-        photo.sizeFilter = '';
-        photo.colorFilter = '';
-        photo.patternFilter = '';
-        photo.nameFilter = '';
-        photo.conditionFilter = '';
-        photo.filterRevision++;
-        if (identical(photo, _photos[_currentPhotoIndex])) {
-          _sizeFilterController.clear();
-        }
-      }
+      final result = await ImageInventorySearch.search(
+        _criteriaForPhoto(photo),
+      );
 
       if (!mounted) return;
       setState(() {
-        photo.matches = matches;
-        photo.usedFallback = usedFallback;
+        _applyPhotoSearchCriteria(photo, result.criteria);
+        photo.matches = result.matches;
+        photo.usedFallback = result.usedFallback;
         photo.isAnalyzing = false;
+        if (identical(photo, _photos[_currentPhotoIndex])) {
+          _sizeFilterController.text = photo.sizeFilter;
+        }
         if (photo.selectedItem != null &&
-            !matches.any((item) => item['id'] == photo.selectedItem!['id'])) {
+            !result.matches.any(
+              (item) => item['id'] == photo.selectedItem!['id'],
+            )) {
           photo.selectedItem = null;
         }
       });

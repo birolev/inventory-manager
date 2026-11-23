@@ -1,14 +1,13 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yoaron_app/constants/categories.dart';
 import 'package:yoaron_app/widgets/cached_remote_image.dart';
 
 import 'package:yoaron_app/widgets/safe_bottom_sheet.dart';
 import '../services/inventory_search.dart';
+import '../services/image_inventory_search.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -167,51 +166,59 @@ class _SearchScreenState extends State<SearchScreen> {
     setState(() => _isSearching = true);
     try {
       final imageBytes = await _searchImage!.readAsBytes();
-      final base64Image = base64Encode(imageBytes);
-      final response = await Supabase.instance.client.functions.invoke(
-        'gemini-vision',
-        body: {
-          'task': 'search',
-          'imageBase64': base64Image,
-          'mimeType': 'image/jpeg',
+      final result = await ImageInventorySearch.analyzeAndSearch(
+        imageBytes: imageBytes,
+        mimeType: 'image/jpeg',
+        criteriaFor: (aiResult) {
+          final category = _normalizeOption(
+            aiResult['category'],
+            clothingCategories,
+          );
+          final aiGender = _normalizeGender(aiResult['gender']);
+          final gender = aiGender.isNotEmpty
+              ? aiGender
+              : _normalizeGender(aiResult['category']);
+          return InventorySearchCriteria(
+            category: _categoryManuallyChanged
+                ? _selectedCategory
+                : category.isEmpty
+                ? 'Minden'
+                : category,
+            gender: _genderManuallyChanged
+                ? _selectedGender
+                : genderOptions.contains(gender)
+                ? gender
+                : 'Minden',
+            location: _selectedLocation,
+            size: _selectedSize,
+            brand: aiResult['brand']?.toString() ?? '',
+            color: aiResult['color']?.toString() ?? '',
+            pattern: aiResult['pattern']?.toString() ?? '',
+            name: _selectedName,
+            condition: _selectedCondition,
+            onlyUnsold: true,
+          );
         },
       );
 
-      if (response.status != 200) {
-        throw Exception('Image analysis failed: ${response.data}');
-      }
-      final aiResult = Map<String, dynamic>.from(response.data as Map);
-      final category = _normalizeOption(
-        aiResult['category'],
-        clothingCategories,
-      );
-      final aiGender = _normalizeGender(aiResult['gender']);
-      final gender = aiGender.isNotEmpty
-          ? aiGender
-          : _normalizeGender(aiResult['category']);
-      final color = aiResult['color']?.toString() ?? '';
-      final pattern = aiResult['pattern']?.toString() ?? '';
-      final brand = aiResult['brand']?.toString() ?? '';
-
       if (!mounted) return;
       setState(() {
-        _aiCriteria = aiResult;
-        if (!_categoryManuallyChanged) {
-          _selectedCategory = category.isEmpty ? 'Minden' : category;
-        }
-        if (!_genderManuallyChanged) {
-          _selectedGender = genderOptions.contains(gender) ? gender : 'Minden';
-        }
-        _selectedColor = color;
-        _selectedPattern = pattern;
-        _selectedBrand = brand;
-        _colorController.text = color;
-        _patternController.text = pattern;
-        _brandController.text = brand;
-        // Let the database search start after analysis has completed.
+        _aiCriteria = result.aiCriteria;
+        _selectedCategory = result.criteria.category ?? 'Minden';
+        _selectedGender = result.criteria.gender ?? 'Minden';
+        _selectedSize = result.criteria.size ?? '';
+        _selectedColor = result.criteria.color ?? '';
+        _selectedPattern = result.criteria.pattern ?? '';
+        _selectedName = result.criteria.name ?? '';
+        _selectedBrand = result.criteria.brand ?? '';
+        _selectedCondition = result.criteria.condition ?? '';
+        _colorController.text = _selectedColor;
+        _patternController.text = _selectedPattern;
+        _brandController.text = _selectedBrand;
+        _searchResults = result.matches;
+        _usedFallback = result.usedFallback;
         _isSearching = false;
       });
-      await _searchInventory();
     } catch (e) {
       if (mounted) setState(() => _isSearching = false);
       if (mounted) {
@@ -251,32 +258,37 @@ class _SearchScreenState extends State<SearchScreen> {
       _usedFallback = false;
     });
     try {
-      var results = await _runInventoryQuery();
-      var usedFallback = false;
-      if (results.isEmpty) {
-        // Retry broadly, retaining only the main category, location, and a
-        // known or manually entered brand.
-        if (!mounted) return;
-        setState(() {
-          _selectedGender = 'Minden';
-          _selectedSize = '';
-          _selectedColor = '';
-          _selectedPattern = '';
-          _selectedName = '';
-          _selectedCondition = '';
-          _sizeController.clear();
-          _colorController.clear();
-          _patternController.clear();
-          _nameController.clear();
-          _conditionController.clear();
-        });
-        results = await _runInventoryQuery(fallback: true);
-        usedFallback = true;
-      }
+      final result = await ImageInventorySearch.search(
+        InventorySearchCriteria(
+          category: _selectedCategory,
+          gender: _selectedGender,
+          location: _selectedLocation,
+          size: _selectedSize,
+          brand: _selectedBrand,
+          color: _selectedColor,
+          pattern: _selectedPattern,
+          name: _selectedName,
+          condition: _selectedCondition,
+          onlyUnsold: true,
+        ),
+      );
       if (!mounted) return;
       setState(() {
-        _searchResults = results;
-        _usedFallback = usedFallback;
+        _searchResults = result.matches;
+        _selectedCategory = result.criteria.category ?? 'Minden';
+        _selectedGender = result.criteria.gender ?? 'Minden';
+        _selectedSize = result.criteria.size ?? '';
+        _selectedColor = result.criteria.color ?? '';
+        _selectedPattern = result.criteria.pattern ?? '';
+        _selectedName = result.criteria.name ?? '';
+        _selectedBrand = result.criteria.brand ?? '';
+        _selectedCondition = result.criteria.condition ?? '';
+        _usedFallback = result.usedFallback;
+        _sizeController.text = _selectedSize;
+        _colorController.text = _selectedColor;
+        _patternController.text = _selectedPattern;
+        _nameController.text = _selectedName;
+        _conditionController.text = _selectedCondition;
         _isSearching = false;
       });
     } catch (e) {
@@ -322,9 +334,11 @@ class _SearchScreenState extends State<SearchScreen> {
   List<({String key, String label, String value})> _activeAiSearchFilters() {
     final filters = <({String key, String label, String value})>[];
     if (_selectedCategory != 'Minden') {
-      filters.add(
-        (key: 'category', label: 'Kategória', value: _selectedCategory),
-      );
+      filters.add((
+        key: 'category',
+        label: 'Kategória',
+        value: _selectedCategory,
+      ));
     }
     if (_selectedGender != 'Minden') {
       filters.add((key: 'gender', label: 'Nem', value: _selectedGender));
@@ -333,30 +347,16 @@ class _SearchScreenState extends State<SearchScreen> {
       filters.add((key: 'color', label: 'Szín', value: _selectedColor.trim()));
     }
     if (_selectedPattern.trim().isNotEmpty) {
-      filters.add((key: 'pattern', label: 'Minta', value: _selectedPattern.trim()));
+      filters.add((
+        key: 'pattern',
+        label: 'Minta',
+        value: _selectedPattern.trim(),
+      ));
     }
     if (_selectedBrand.trim().isNotEmpty) {
       filters.add((key: 'brand', label: 'Márka', value: _selectedBrand.trim()));
     }
     return filters;
-  }
-
-  Future<List<dynamic>> _runInventoryQuery({bool fallback = false}) async {
-    return InventorySearch.search(
-      InventorySearchCriteria(
-        category: _selectedCategory,
-        gender: _selectedGender,
-        location: _selectedLocation,
-        size: _selectedSize,
-        brand: _selectedBrand,
-        color: _selectedColor,
-        pattern: _selectedPattern,
-        name: _selectedName,
-        condition: _selectedCondition,
-        onlyUnsold: true,
-        fallback: fallback,
-      ),
-    );
   }
 
   void _showItemDetails(Map<String, dynamic> item) {
@@ -789,21 +789,20 @@ class _SearchScreenState extends State<SearchScreen> {
                                     Wrap(
                                       spacing: 6,
                                       runSpacing: 0,
-                                      children: _activeAiSearchFilters()
-                                          .map((filter) {
-                                            return InputChip(
-                                              label: Text(
-                                                '${filter.label}: ${filter.value}',
-                                              ),
-                                              onDeleted: _isSearching
-                                                  ? null
-                                                  : () =>
-                                                        _removeAiSearchFilter(
-                                                          filter.key,
-                                                        ),
-                                            );
-                                          })
-                                          .toList(),
+                                      children: _activeAiSearchFilters().map((
+                                        filter,
+                                      ) {
+                                        return InputChip(
+                                          label: Text(
+                                            '${filter.label}: ${filter.value}',
+                                          ),
+                                          onDeleted: _isSearching
+                                              ? null
+                                              : () => _removeAiSearchFilter(
+                                                  filter.key,
+                                                ),
+                                        );
+                                      }).toList(),
                                     ),
                                   ],
                                 ],
