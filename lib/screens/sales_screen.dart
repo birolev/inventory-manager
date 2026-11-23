@@ -74,6 +74,7 @@ class _SalesScreenState extends State<SalesScreen> {
   String _location = _locations.first;
   String _paymentMethod = 'cash';
   String _sortOption = 'newest';
+  ImageSearchMode _photoSearchMode = ImageSearchMode.embedded;
   DateTime _soldAt = DateTime.now();
 
   @override
@@ -301,10 +302,11 @@ class _SalesScreenState extends State<SalesScreen> {
 
     try {
       final bytes = await photo.file.readAsBytes();
-      final result = await ImageInventorySearch.analyzeAndSearch(
+      final result = await ImageInventorySearch.searchByImage(
         imageBytes: bytes,
         mimeType: _mimeTypeFor(photo.file),
-        criteriaFor: (criteria) => _criteriaFromPhotoAnalysis(photo, criteria),
+        criteria: _criteriaForPhoto(photo),
+        mode: _photoSearchMode,
       );
       if (!mounted) return;
       setState(() {
@@ -338,25 +340,6 @@ class _SalesScreenState extends State<SalesScreen> {
     return 'image/jpeg';
   }
 
-  String _normalizeOption(dynamic value, Iterable<String> options) {
-    final normalized = value?.toString().trim().toLowerCase();
-    if (normalized == null || normalized.isEmpty) return '';
-    for (final option in options) {
-      if (option.toLowerCase() == normalized) return option;
-    }
-    return '';
-  }
-
-  String _normalizeGender(dynamic value) {
-    final normalized = value?.toString().trim().toLowerCase();
-    if (normalized == null || normalized.isEmpty) return '';
-    final matchingOption = _normalizeOption(normalized, genderOptions);
-    if (matchingOption.isNotEmpty) return matchingOption;
-    if (const {'female', 'woman', 'women'}.contains(normalized)) return 'női';
-    if (const {'male', 'man', 'men'}.contains(normalized)) return 'férfi';
-    return '';
-  }
-
   InventorySearchCriteria _criteriaForPhoto(_SalePhoto photo) {
     final (sortColumn, ascending) = switch (_sortOption) {
       'oldest' => ('created_at', true),
@@ -377,34 +360,6 @@ class _SalesScreenState extends State<SalesScreen> {
       onlyUnsold: true,
       sortColumn: sortColumn,
       ascending: ascending,
-      maxResults: 100,
-    );
-  }
-
-  InventorySearchCriteria _criteriaFromPhotoAnalysis(
-    _SalePhoto photo,
-    Map<String, dynamic> aiCriteria,
-  ) {
-    final category = _normalizeOption(
-      aiCriteria['category'],
-      clothingCategories,
-    );
-    final detectedGender = _normalizeGender(aiCriteria['gender']);
-    final gender = detectedGender.isNotEmpty
-        ? detectedGender
-        : _normalizeGender(aiCriteria['category']);
-    final base = _criteriaForPhoto(photo);
-    return InventorySearchCriteria(
-      category: category.isEmpty ? 'Minden' : category,
-      gender: genderOptions.contains(gender) ? gender : 'Minden',
-      location: photo.locationFilter,
-      brand: aiCriteria['brand']?.toString() ?? '',
-      size: aiCriteria['size']?.toString() ?? '',
-      color: aiCriteria['color']?.toString() ?? '',
-      pattern: aiCriteria['pattern']?.toString() ?? '',
-      onlyUnsold: true,
-      sortColumn: base.sortColumn,
-      ascending: base.ascending,
       maxResults: 100,
     );
   }
@@ -1115,9 +1070,11 @@ class _SalesScreenState extends State<SalesScreen> {
                                 style: const TextStyle(color: Colors.red),
                               )
                             : Text(
-                                'AI match: ${photo.aiCriteria?['category'] ?? '-'} · '
-                                '${photo.aiCriteria?['gender'] ?? '-'} · '
-                                '${photo.aiCriteria?['color'] ?? '-'}',
+                                _photoSearchMode == ImageSearchMode.embedded
+                                    ? 'Embedded vector results'
+                                    : 'AI match: ${photo.aiCriteria?['category'] ?? '-'} · '
+                                          '${photo.aiCriteria?['gender'] ?? '-'} · '
+                                          '${photo.aiCriteria?['color'] ?? '-'}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -1126,6 +1083,32 @@ class _SalesScreenState extends State<SalesScreen> {
                     ],
                   ),
                   const SizedBox(height: 4),
+                  DropdownButtonFormField<ImageSearchMode>(
+                    initialValue: _photoSearchMode,
+                    decoration: const InputDecoration(
+                      labelText: 'Photo search method',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: ImageSearchMode.embedded,
+                        child: Text('Embedded vectors'),
+                      ),
+                      DropdownMenuItem(
+                        value: ImageSearchMode.gemini,
+                        child: Text('Gemini analysis'),
+                      ),
+                    ],
+                    onChanged: photo.isAnalyzing
+                        ? null
+                        : (mode) {
+                            if (mode == null) return;
+                            setState(() => _photoSearchMode = mode);
+                            _analyzeCurrentPhoto();
+                          },
+                  ),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
                       const Expanded(

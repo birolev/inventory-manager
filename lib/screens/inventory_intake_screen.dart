@@ -291,6 +291,32 @@ class _InventoryScreenState extends State<InventoryScreen> {
       final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
       final imageBytes = await currentItem.bytes;
 
+      List<num>? embedding;
+      try {
+        final embeddingResponse = await Supabase.instance.client.functions
+            .invoke(
+              'image-embedding',
+              body: {
+                'imageBase64': base64Encode(imageBytes),
+                'mimeType': currentItem.image.mimeType ?? 'image/jpeg',
+              },
+            );
+        if (embeddingResponse.status != 200) {
+          throw Exception('Image embedding failed: ${embeddingResponse.data}');
+        }
+        embedding =
+            (Map<String, dynamic>.from(
+                      embeddingResponse.data as Map,
+                    )['embedding']
+                    as List)
+                .cast<num>();
+      } catch (error) {
+        _showSnackBar(
+          'Item saved without an image vector: $error',
+          isError: true,
+        );
+      }
+
       await Supabase.instance.client.storage
           .from('clothes-images')
           .uploadBinary(fileName, imageBytes);
@@ -308,14 +334,20 @@ class _InventoryScreenState extends State<InventoryScreen> {
             'brand': _brandController.text,
             'price_est': double.tryParse(_priceController.text) ?? 0.0,
             'category': _selectedCategory,
-            'secondary_categories': (currentItem.aiResult?['secondary_categories'] as List? ?? [])
-                .whereType<String>()
-                .where((category) => clothingCategories.contains(category) && category != _selectedCategory)
-                .toSet()
-                .toList(),
+            'secondary_categories':
+                (currentItem.aiResult?['secondary_categories'] as List? ?? [])
+                    .whereType<String>()
+                    .where(
+                      (category) =>
+                          clothingCategories.contains(category) &&
+                          category != _selectedCategory,
+                    )
+                    .toSet()
+                    .toList(),
             'gender': _selectedGender,
             'location': _selectedLocation,
             'image_url': imageUrl,
+            if (embedding != null) 'embedding': embedding,
             'color': _colorController.text,
             'pattern': _patternController.text,
             'size': _sizeController.text,

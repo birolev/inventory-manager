@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -7,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yoaron_app/constants/categories.dart';
 import 'package:yoaron_app/widgets/cached_remote_image.dart';
 import '../services/inventory_search.dart';
+import '../services/image_inventory_search.dart';
 
 import 'sales_screen.dart';
 import '../widgets/safe_bottom_sheet.dart';
@@ -31,6 +31,8 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   String _selectedColorFilter = '';
   String _selectedPatternFilter = '';
   bool _isAnalyzingPhoto = false;
+  ImageSearchMode _imageSearchMode = ImageSearchMode.embedded;
+  bool _isBackfillingEmbeddings = false;
   bool _isCheckingDuplicates = false;
   bool _showingDuplicates = false;
   bool _soldAndAvailableOnly = false;
@@ -127,41 +129,38 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
               : photo.name.toLowerCase().endsWith('.webp')
               ? 'image/webp'
               : 'image/jpeg');
-      final response = await Supabase.instance.client.functions.invoke(
-        'gemini-vision',
-        body: {
-          'task': 'search',
-          'imageBase64': base64Encode(bytes),
-          'mimeType': imageMimeType,
-        },
+      final result = await ImageInventorySearch.searchByImage(
+        imageBytes: bytes,
+        mimeType: imageMimeType,
+        mode: _imageSearchMode,
+        criteria: InventorySearchCriteria(
+          location: _selectedLocationFilter,
+          category: _selectedFilter,
+          gender: _selectedGenderFilter,
+          size: _selectedSizeFilter,
+          brand: _selectedBrandFilter,
+          color: _selectedColorFilter,
+          pattern: _selectedPatternFilter,
+          maxResults: 50,
+        ),
       );
-      if (response.status != 200) {
-        throw Exception('Image analysis failed: ${response.data}');
-      }
-      final responseData = Map<String, dynamic>.from(response.data as Map);
-      final criteria = responseData['result'] is Map
-          ? Map<String, dynamic>.from(responseData['result'] as Map)
-          : responseData;
       if (!mounted) return;
-      final category = _normalizeOption(
-        criteria['category'],
-        clothingCategories,
-      );
       setState(() {
-        _selectedFilter = category.isEmpty ? 'Minden' : category;
-        final gender = _normalizeGender(criteria['gender']);
-        _selectedGenderFilter = genderOptions.contains(gender)
-            ? gender
-            : 'Minden';
-        _selectedColorFilter = criteria['color']?.toString() ?? '';
-        _selectedBrandFilter = criteria['brand']?.toString() ?? '';
-        _selectedPatternFilter = criteria['pattern']?.toString() ?? '';
-        _selectedSizeFilter = '';
-        _sizeFilterController.clear();
-        _colorFilterController.text = _selectedColorFilter;
+        _inventory = result.matches;
+        _selectedFilter = result.criteria.category ?? 'Minden';
+        _selectedGenderFilter = result.criteria.gender ?? 'Minden';
+        _selectedLocationFilter = result.criteria.location ?? 'All locations';
+        _selectedSizeFilter = result.criteria.size ?? '';
+        _selectedBrandFilter = result.criteria.brand ?? '';
+        _selectedColorFilter = result.criteria.color ?? '';
+        _selectedPatternFilter = result.criteria.pattern ?? '';
+        _sizeFilterController.text = _selectedSizeFilter;
         _brandFilterController.text = _selectedBrandFilter;
+        _colorFilterController.text = _selectedColorFilter;
+        _isLoading = false;
+        _showingDuplicates = false;
+        _usedFallback = result.usedFallback;
       });
-      await _fetchInventory(broadenIfEmpty: true);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -170,6 +169,30 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       }
     } finally {
       if (mounted) setState(() => _isAnalyzingPhoto = false);
+    }
+  }
+
+  Future<void> _backfillImageEmbeddings() async {
+    setState(() => _isBackfillingEmbeddings = true);
+    try {
+      final result = await ImageInventorySearch.backfillMissing(limit: 3);
+      if (!mounted) return;
+      final message = result.attempted == 0
+          ? 'No inventory photos are missing embeddings.'
+          : 'Embedding backfill: ${result.updated} updated, ${result.failed} failed.'
+                '${result.errors.isEmpty ? '' : '\n${result.errors.first}'}'
+                '${result.failed == 0 ? ' Run again for the next 3.' : ''}';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), duration: const Duration(seconds: 8)),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Embedding backfill failed: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isBackfillingEmbeddings = false);
     }
   }
 
@@ -339,25 +362,6 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
         ),
       ),
     );
-  }
-
-  String _normalizeOption(dynamic value, Iterable<String> options) {
-    final normalized = value?.toString().trim().toLowerCase();
-    if (normalized == null || normalized.isEmpty) return '';
-    for (final option in options) {
-      if (option.toLowerCase() == normalized) return option;
-    }
-    return '';
-  }
-
-  String _normalizeGender(dynamic value) {
-    final normalized = value?.toString().trim().toLowerCase();
-    if (normalized == null || normalized.isEmpty) return '';
-    final option = _normalizeOption(normalized, genderOptions);
-    if (option.isNotEmpty) return option;
-    if (const {'female', 'woman', 'women'}.contains(normalized)) return 'női';
-    if (const {'male', 'man', 'men'}.contains(normalized)) return 'férfi';
-    return '';
   }
 
   Future<void> _addToSale(Map<String, dynamic> item) async {
@@ -812,6 +816,36 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                     child: Text('Take photo'),
                   ),
                 ],
+              ),
+              PopupMenuButton<ImageSearchMode>(
+                tooltip: 'Photo search method',
+                icon: const Icon(Icons.tune),
+                onSelected: (mode) => setState(() => _imageSearchMode = mode),
+                itemBuilder: (context) => [
+                  CheckedPopupMenuItem(
+                    value: ImageSearchMode.embedded,
+                    checked: _imageSearchMode == ImageSearchMode.embedded,
+                    child: const Text('Embedded vectors'),
+                  ),
+                  CheckedPopupMenuItem(
+                    value: ImageSearchMode.gemini,
+                    checked: _imageSearchMode == ImageSearchMode.gemini,
+                    child: const Text('Gemini analysis'),
+                  ),
+                ],
+              ),
+              IconButton(
+                tooltip: 'Generate missing vectors (3 at a time)',
+                onPressed: _isBackfillingEmbeddings
+                    ? null
+                    : _backfillImageEmbeddings,
+                icon: _isBackfillingEmbeddings
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.auto_awesome),
               ),
               IconButton(
                 tooltip: 'Record sale',

@@ -420,3 +420,6 @@ enabled = true
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":180,\"commaStyle\":\"trailing\"}"
 [functions.gemini-vision]
 verify_jwt = true
+
+[functions.image-embedding]
+verify_jwt = true

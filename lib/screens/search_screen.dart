@@ -21,6 +21,7 @@ class _SearchScreenState extends State<SearchScreen> {
   final ImagePicker _picker = ImagePicker();
   bool _isSearching = false;
   bool _usedFallback = false;
+  ImageSearchMode _imageSearchMode = ImageSearchMode.embedded;
   bool _filtersExpanded = true;
   List<dynamic> _searchResults = [];
   Map<String, dynamic>? _aiCriteria; // Stores what the AI was looking for
@@ -33,8 +34,6 @@ class _SearchScreenState extends State<SearchScreen> {
   String _selectedName = '';
   String _selectedBrand = '';
   String _selectedCondition = '';
-  bool _categoryManuallyChanged = false;
-  bool _genderManuallyChanged = false;
   final TextEditingController _colorController = TextEditingController();
   final TextEditingController _patternController = TextEditingController();
   final TextEditingController _sizeController = TextEditingController();
@@ -134,8 +133,6 @@ class _SearchScreenState extends State<SearchScreen> {
           _selectedName = '';
           _selectedBrand = '';
           _selectedCondition = '';
-          _categoryManuallyChanged = false;
-          _genderManuallyChanged = false;
           _colorController.clear();
           _patternController.clear();
           _nameController.clear();
@@ -166,39 +163,23 @@ class _SearchScreenState extends State<SearchScreen> {
     setState(() => _isSearching = true);
     try {
       final imageBytes = await _searchImage!.readAsBytes();
-      final result = await ImageInventorySearch.analyzeAndSearch(
+      final result = await ImageInventorySearch.searchByImage(
         imageBytes: imageBytes,
         mimeType: 'image/jpeg',
-        criteriaFor: (aiResult) {
-          final category = _normalizeOption(
-            aiResult['category'],
-            clothingCategories,
-          );
-          final aiGender = _normalizeGender(aiResult['gender']);
-          final gender = aiGender.isNotEmpty
-              ? aiGender
-              : _normalizeGender(aiResult['category']);
-          return InventorySearchCriteria(
-            category: _categoryManuallyChanged
-                ? _selectedCategory
-                : category.isEmpty
-                ? 'Minden'
-                : category,
-            gender: _genderManuallyChanged
-                ? _selectedGender
-                : genderOptions.contains(gender)
-                ? gender
-                : 'Minden',
-            location: _selectedLocation,
-            size: _selectedSize,
-            brand: aiResult['brand']?.toString() ?? '',
-            color: aiResult['color']?.toString() ?? '',
-            pattern: aiResult['pattern']?.toString() ?? '',
-            name: _selectedName,
-            condition: _selectedCondition,
-            onlyUnsold: true,
-          );
-        },
+        mode: _imageSearchMode,
+        criteria: InventorySearchCriteria(
+          category: _selectedCategory,
+          gender: _selectedGender,
+          location: _selectedLocation,
+          size: _selectedSize,
+          brand: _selectedBrand,
+          color: _selectedColor,
+          pattern: _selectedPattern,
+          name: _selectedName,
+          condition: _selectedCondition,
+          onlyUnsold: true,
+          maxResults: 50,
+        ),
       );
 
       if (!mounted) return;
@@ -230,25 +211,6 @@ class _SearchScreenState extends State<SearchScreen> {
         );
       }
     }
-  }
-
-  String _normalizeOption(dynamic value, Iterable<String> options) {
-    final normalized = value?.toString().trim().toLowerCase();
-    if (normalized == null || normalized.isEmpty) return '';
-    for (final option in options) {
-      if (option.toLowerCase() == normalized) return option;
-    }
-    return '';
-  }
-
-  String _normalizeGender(dynamic value) {
-    final normalized = value?.toString().trim().toLowerCase();
-    if (normalized == null || normalized.isEmpty) return '';
-    final matchingOption = _normalizeOption(normalized, genderOptions);
-    if (matchingOption.isNotEmpty) return matchingOption;
-    if (const {'female', 'woman', 'women'}.contains(normalized)) return 'női';
-    if (const {'male', 'man', 'men'}.contains(normalized)) return 'férfi';
-    return '';
   }
 
   Future<void> _searchInventory() async {
@@ -479,6 +441,38 @@ class _SearchScreenState extends State<SearchScreen> {
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       children: [
+                        if (_searchImage != null) ...[
+                          DropdownButtonFormField<ImageSearchMode>(
+                            initialValue: _imageSearchMode,
+                            decoration: const InputDecoration(
+                              labelText: 'Photo search method',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: ImageSearchMode.embedded,
+                                child: Text('Embedded vectors'),
+                              ),
+                              DropdownMenuItem(
+                                value: ImageSearchMode.gemini,
+                                child: Text('Gemini analysis'),
+                              ),
+                            ],
+                            onChanged: _isSearching
+                                ? null
+                                : (mode) {
+                                    if (mode == null) return;
+                                    setState(() {
+                                      _imageSearchMode = mode;
+                                      _searchResults = [];
+                                      _aiCriteria = null;
+                                      _usedFallback = false;
+                                    });
+                                  },
+                          ),
+                          const SizedBox(height: 8),
+                        ],
                         Row(
                           children: [
                             const Expanded(
@@ -508,7 +502,6 @@ class _SearchScreenState extends State<SearchScreen> {
                               if (value == null || !mounted) return;
                               setState(() {
                                 _selectedCategory = value;
-                                _categoryManuallyChanged = true;
                                 _searchResults = [];
                               });
                             },
@@ -545,7 +538,6 @@ class _SearchScreenState extends State<SearchScreen> {
                               if (value != null) {
                                 setState(() {
                                   _selectedGender = value;
-                                  _genderManuallyChanged = true;
                                   _searchResults = [];
                                 });
                               }
@@ -752,9 +744,12 @@ class _SearchScreenState extends State<SearchScreen> {
                                       label: Text(
                                         _searchImage == null
                                             ? 'Search inventory'
-                                            : _aiCriteria == null
-                                            ? 'Analyze image & search'
-                                            : 'Search inventory',
+                                            : _aiCriteria != null
+                                            ? 'Search inventory'
+                                            : _imageSearchMode ==
+                                                  ImageSearchMode.gemini
+                                            ? 'Analyze with Gemini'
+                                            : 'Search with embeddings',
                                       ),
                                     ),
                                   OutlinedButton.icon(
@@ -771,9 +766,10 @@ class _SearchScreenState extends State<SearchScreen> {
                                         const CircularProgressIndicator(),
                                         const SizedBox(width: 10),
                                         Text(
-                                          _aiCriteria == null
-                                              ? 'AI elemzés...'
-                                              : 'Keresés...',
+                                          _imageSearchMode ==
+                                                  ImageSearchMode.gemini
+                                              ? 'Gemini analysis...'
+                                              : 'Searching embeddings...',
                                         ),
                                       ],
                                     ),
