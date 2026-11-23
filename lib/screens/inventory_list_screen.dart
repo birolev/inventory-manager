@@ -32,7 +32,12 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   String _selectedPatternFilter = '';
   bool _isAnalyzingPhoto = false;
   bool _isCheckingDuplicates = false;
+  bool _showingDuplicates = false;
+  bool _soldAndAvailableOnly = false;
   bool _usedFallback = false;
+  List<Map<String, dynamic>> _duplicatePairs = [];
+  final Map<String, double> _duplicateSimilarityById = {};
+  final Map<String, int> _duplicateCountById = {};
   File? _searchImage;
   final ImagePicker _imagePicker = ImagePicker();
   final TextEditingController _sizeFilterController = TextEditingController();
@@ -49,7 +54,14 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   }
 
   Future<void> _fetchInventory({bool broadenIfEmpty = false}) async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _showingDuplicates = false;
+      _soldAndAvailableOnly = false;
+      _duplicatePairs = [];
+      _duplicateSimilarityById.clear();
+      _duplicateCountById.clear();
+    });
     try {
       final criteria = InventorySearchCriteria(
         category: _selectedFilter,
@@ -164,6 +176,10 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   }
 
   Future<void> _checkPossibleDuplicates() async {
+    if (_showingDuplicates) {
+      await _fetchInventory();
+      return;
+    }
     setState(() => _isCheckingDuplicates = true);
     try {
       final response = await Supabase.instance.client.rpc(
@@ -173,70 +189,13 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
           .map((row) => Map<String, dynamic>.from(row as Map))
           .toList();
       if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text('Possible duplicates (${pairs.length})'),
-          content: SizedBox(
-            width: 560,
-            child: pairs.isEmpty
-                ? const Text('No likely duplicate items found.')
-                : ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: pairs.length,
-                    separatorBuilder: (_, _) => const Divider(height: 20),
-                    itemBuilder: (context, index) {
-                      final pair = pairs[index];
-                      final first = Map<String, dynamic>.from(
-                        pair['first_item'] as Map,
-                      );
-                      final second = Map<String, dynamic>.from(
-                        pair['second_item'] as Map,
-                      );
-                      final similarity =
-                          ((pair['description_similarity'] as num?)?.toDouble() ??
-                              0) *
-                          100;
-                      String details(Map<String, dynamic> item) => [
-                        item['brand'],
-                        item['color'],
-                        '${item['price_est'] ?? '-'} Ft',
-                        item['location'],
-                      ].where((value) =>
-                          value != null && value.toString().isNotEmpty).join(' · ');
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${similarity.toStringAsFixed(0)}% description match',
-                            style: Theme.of(context).textTheme.labelMedium,
-                          ),
-                          const SizedBox(height: 6),
-                          ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(first['name']?.toString() ?? 'Unnamed item'),
-                            subtitle: Text(details(first)),
-                          ),
-                          ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(second['name']?.toString() ?? 'Unnamed item'),
-                            subtitle: Text(details(second)),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Close'),
-            ),
-          ],
-        ),
-      );
+      setState(() {
+        _duplicatePairs = pairs;
+        _soldAndAvailableOnly = false;
+        _showingDuplicates = true;
+        _usedFallback = false;
+      });
+      _applyDuplicateFilter();
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -246,6 +205,53 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     } finally {
       if (mounted) setState(() => _isCheckingDuplicates = false);
     }
+  }
+
+  void _applyDuplicateFilter() {
+    final itemsById = <String, Map<String, dynamic>>{};
+    final similarityById = <String, double>{};
+    final duplicateCountById = <String, int>{};
+    for (final pair in _duplicatePairs) {
+      final first = Map<String, dynamic>.from(pair['first_item'] as Map);
+      final second = Map<String, dynamic>.from(pair['second_item'] as Map);
+      final firstId = first['id']?.toString();
+      final secondId = second['id']?.toString();
+      // Ignore malformed/self pairs and show each inventory row only once.
+      if (firstId == null || secondId == null || firstId == secondId) continue;
+      final firstIsSold = first['is_sold'] == true;
+      final secondIsSold = second['is_sold'] == true;
+      if (_soldAndAvailableOnly && firstIsSold == secondIsSold) continue;
+
+      final similarity =
+          (pair['description_similarity'] as num?)?.toDouble() ?? 0;
+      itemsById.putIfAbsent(firstId, () => first);
+      itemsById.putIfAbsent(secondId, () => second);
+      similarityById[firstId] = similarity > (similarityById[firstId] ?? 0)
+          ? similarity
+          : similarityById[firstId] ?? 0;
+      similarityById[secondId] = similarity > (similarityById[secondId] ?? 0)
+          ? similarity
+          : similarityById[secondId] ?? 0;
+      duplicateCountById.update(
+        firstId,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+      duplicateCountById.update(
+        secondId,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+    }
+    setState(() {
+      _inventory = itemsById.values.toList();
+      _duplicateSimilarityById
+        ..clear()
+        ..addAll(similarityById);
+      _duplicateCountById
+        ..clear()
+        ..addAll(duplicateCountById);
+    });
   }
 
   String _normalizeOption(dynamic value, Iterable<String> options) {
@@ -732,14 +738,20 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                 },
               ),
               IconButton(
-                tooltip: 'Check for possible duplicates',
+                tooltip: _showingDuplicates
+                    ? 'Show all inventory'
+                    : 'Show possible duplicates',
                 icon: _isCheckingDuplicates
                     ? const SizedBox(
                         width: 22,
                         height: 22,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.content_copy),
+                    : Icon(
+                        _showingDuplicates
+                            ? Icons.inventory_2_outlined
+                            : Icons.content_copy,
+                      ),
                 onPressed: _isCheckingDuplicates
                     ? null
                     : _checkPossibleDuplicates,
@@ -1054,23 +1066,56 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Showing ${_inventory.length} items${_usedFallback ? ' · broader photo matches' : ''}',
+                    _showingDuplicates
+                        ? 'Possible duplicates · ${_inventory.length} unique items'
+                        : 'Showing ${_inventory.length} items${_usedFallback ? ' · broader photo matches' : ''}',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
               ),
+              if (_showingDuplicates)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Wrap(
+                    spacing: 8,
+                    children: [
+                      FilterChip(
+                        label: const Text('All possible duplicates'),
+                        selected: !_soldAndAvailableOnly,
+                        onSelected: (selected) {
+                          if (!selected) return;
+                          setState(() => _soldAndAvailableOnly = false);
+                          _applyDuplicateFilter();
+                        },
+                      ),
+                      FilterChip(
+                        label: const Text('Sold item + unsold copy'),
+                        selected: _soldAndAvailableOnly,
+                        onSelected: (selected) {
+                          setState(() => _soldAndAvailableOnly = selected);
+                          _applyDuplicateFilter();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
 
               // --- THE GRID VIEW ---
               Expanded(
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : _inventory.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: Text(
-                          'Nincs találat (No items found)',
-                          style: TextStyle(fontSize: 18, color: Colors.grey),
+                          _showingDuplicates
+                              ? 'No likely duplicates found.'
+                              : 'Nincs találat (No items found)',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            color: Colors.grey,
+                          ),
                         ),
                       )
                     : GridView.builder(
@@ -1085,6 +1130,10 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                         itemCount: _inventory.length,
                         itemBuilder: (context, index) {
                           final item = _inventory[index];
+                          final itemId = item['id']?.toString() ?? '';
+                          final similarity = _duplicateSimilarityById[itemId];
+                          final duplicateCount =
+                              _duplicateCountById[itemId] ?? 0;
 
                           // --- NEW: INKWELL MAKES THE CARD TAPPABLE ---
                           return InkWell(
@@ -1214,6 +1263,34 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                                             ),
                                           ),
                                         ),
+                                        if (_showingDuplicates)
+                                          Positioned(
+                                            left: 6,
+                                            top: 6,
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 5,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color:
+                                                    Colors.deepOrange.shade700,
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: Text(
+                                                '${item['is_sold'] == true ? 'SOLD' : 'AVAILABLE'} · ${similarity != null && similarity >= 0.999 ? 'Exact description' : '${((similarity ?? 0) * 100).round()}% similar'} · $duplicateCount match${duplicateCount == 1 ? '' : 'es'}',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ),
                                       ],
                                     ),
                                   ),
