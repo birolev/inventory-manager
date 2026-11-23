@@ -36,8 +36,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   bool _soldAndAvailableOnly = false;
   bool _usedFallback = false;
   List<Map<String, dynamic>> _duplicatePairs = [];
-  final Map<String, double> _duplicateSimilarityById = {};
-  final Map<String, int> _duplicateCountById = {};
+  List<Map<String, dynamic>> _visibleDuplicatePairs = [];
   File? _searchImage;
   final ImagePicker _imagePicker = ImagePicker();
   final TextEditingController _sizeFilterController = TextEditingController();
@@ -59,8 +58,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       _showingDuplicates = false;
       _soldAndAvailableOnly = false;
       _duplicatePairs = [];
-      _duplicateSimilarityById.clear();
-      _duplicateCountById.clear();
+      _visibleDuplicatePairs = [];
     });
     try {
       final criteria = InventorySearchCriteria(
@@ -208,50 +206,94 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   }
 
   void _applyDuplicateFilter() {
-    final itemsById = <String, Map<String, dynamic>>{};
-    final similarityById = <String, double>{};
-    final duplicateCountById = <String, int>{};
+    final visiblePairs = <Map<String, dynamic>>[];
     for (final pair in _duplicatePairs) {
       final first = Map<String, dynamic>.from(pair['first_item'] as Map);
       final second = Map<String, dynamic>.from(pair['second_item'] as Map);
       final firstId = first['id']?.toString();
       final secondId = second['id']?.toString();
-      // Ignore malformed/self pairs and show each inventory row only once.
+      // Ignore malformed pairs and any self-pairs.
       if (firstId == null || secondId == null || firstId == secondId) continue;
       final firstIsSold = first['is_sold'] == true;
       final secondIsSold = second['is_sold'] == true;
       if (_soldAndAvailableOnly && firstIsSold == secondIsSold) continue;
-
-      final similarity =
-          (pair['description_similarity'] as num?)?.toDouble() ?? 0;
-      itemsById.putIfAbsent(firstId, () => first);
-      itemsById.putIfAbsent(secondId, () => second);
-      similarityById[firstId] = similarity > (similarityById[firstId] ?? 0)
-          ? similarity
-          : similarityById[firstId] ?? 0;
-      similarityById[secondId] = similarity > (similarityById[secondId] ?? 0)
-          ? similarity
-          : similarityById[secondId] ?? 0;
-      duplicateCountById.update(
-        firstId,
-        (count) => count + 1,
-        ifAbsent: () => 1,
-      );
-      duplicateCountById.update(
-        secondId,
-        (count) => count + 1,
-        ifAbsent: () => 1,
-      );
+      visiblePairs.add(pair);
     }
-    setState(() {
-      _inventory = itemsById.values.toList();
-      _duplicateSimilarityById
-        ..clear()
-        ..addAll(similarityById);
-      _duplicateCountById
-        ..clear()
-        ..addAll(duplicateCountById);
-    });
+    setState(() => _visibleDuplicatePairs = visiblePairs);
+  }
+
+  Widget _buildDuplicatePairCard(Map<String, dynamic> pair, int index) {
+    final first = Map<String, dynamic>.from(pair['first_item'] as Map);
+    final second = Map<String, dynamic>.from(pair['second_item'] as Map);
+    final similarity =
+        ((pair['description_similarity'] as num?)?.toDouble() ?? 0) * 100;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(10, 5, 10, 8),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          ListTile(
+            dense: true,
+            title: Text('Possible match ${index + 1}'),
+            trailing: Text(
+              '${similarity.toStringAsFixed(0)}% name match',
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
+          const Divider(height: 1),
+          _buildDuplicateItemTile(first),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          _buildDuplicateItemTile(second),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDuplicateItemTile(Map<String, dynamic> item) {
+    final imageUrl = item['image_url']?.toString() ?? '';
+    final isSold = item['is_sold'] == true;
+    final details =
+        [
+              item['brand'],
+              item['category'],
+              item['color'],
+              '${item['price_est'] ?? '-'} Ft',
+              item['location'],
+            ]
+            .where(
+              (value) => value != null && value.toString().trim().isNotEmpty,
+            )
+            .join(' · ');
+    return ListTile(
+      onTap: () => _showEditSheet(item),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: SizedBox(
+          width: 56,
+          height: 56,
+          child: imageUrl.isEmpty
+              ? const ColoredBox(
+                  color: Color(0xFFECEFF1),
+                  child: Icon(Icons.image_not_supported, color: Colors.grey),
+                )
+              : CachedRemoteImage(imageUrl, fit: BoxFit.cover, thumbnail: true),
+        ),
+      ),
+      title: Text(
+        item['name']?.toString() ?? 'Unknown item',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(details, maxLines: 2, overflow: TextOverflow.ellipsis),
+      trailing: Text(
+        isSold ? 'SOLD' : 'AVAILABLE',
+        style: TextStyle(
+          color: isSold ? Colors.red.shade700 : Colors.green.shade700,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
   }
 
   String _normalizeOption(dynamic value, Iterable<String> options) {
@@ -1067,7 +1109,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     _showingDuplicates
-                        ? 'Possible duplicates · ${_inventory.length} unique items'
+                        ? 'Possible duplicate pairs · ${_visibleDuplicatePairs.length}'
                         : 'Showing ${_inventory.length} items${_usedFallback ? ' · broader photo matches' : ''}',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w600,
@@ -1114,16 +1156,33 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
               Expanded(
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
+                    : _showingDuplicates
+                    ? _visibleDuplicatePairs.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'No likely duplicates found.',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              itemCount: _visibleDuplicatePairs.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 2),
+                              itemBuilder: (context, index) =>
+                                  _buildDuplicatePairCard(
+                                    _visibleDuplicatePairs[index],
+                                    index,
+                                  ),
+                            )
                     : _inventory.isEmpty
-                    ? Center(
+                    ? const Center(
                         child: Text(
-                          _showingDuplicates
-                              ? 'No likely duplicates found.'
-                              : 'Nincs találat (No items found)',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey,
-                          ),
+                          'Nincs találat (No items found)',
+                          style: TextStyle(fontSize: 18, color: Colors.grey),
                         ),
                       )
                     : GridView.builder(
@@ -1138,10 +1197,6 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                         itemCount: _inventory.length,
                         itemBuilder: (context, index) {
                           final item = _inventory[index];
-                          final itemId = item['id']?.toString() ?? '';
-                          final similarity = _duplicateSimilarityById[itemId];
-                          final duplicateCount =
-                              _duplicateCountById[itemId] ?? 0;
 
                           // --- NEW: INKWELL MAKES THE CARD TAPPABLE ---
                           return InkWell(
@@ -1271,34 +1326,6 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                                             ),
                                           ),
                                         ),
-                                        if (_showingDuplicates)
-                                          Positioned(
-                                            left: 6,
-                                            top: 6,
-                                            child: Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 5,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color:
-                                                    Colors.deepOrange.shade700,
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                              ),
-                                              child: Text(
-                                                '${item['is_sold'] == true ? 'SOLD' : 'AVAILABLE'} · ${similarity != null && similarity >= 0.999 ? 'Exact description' : '${((similarity ?? 0) * 100).round()}% similar'} · $duplicateCount match${duplicateCount == 1 ? '' : 'es'}',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ),
                                       ],
                                     ),
                                   ),
