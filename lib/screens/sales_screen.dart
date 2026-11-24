@@ -5,9 +5,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../controllers/inventory_search_controller.dart';
 import '../services/image_inventory_search.dart';
 import '../services/inventory_search.dart';
+import '../theme/app_theme.dart';
+import '../widgets/cached_remote_image.dart';
 import '../widgets/inventory_search_view.dart';
-import 'inventory_list_screen.dart';
-import 'sales_dashboard_screen.dart';
 
 enum _SalesStage { start, matchingPhoto, manualSearch, addOptions, checkout }
 
@@ -36,12 +36,14 @@ class SalesScreen extends StatefulWidget {
     this.initialPhotos = const [],
     this.searchGateway = const SupabaseInventorySearchGateway(),
     this.onRecordSale,
+    this.onOpenAccount,
   });
 
   final List<Map<String, dynamic>> initialItems;
   final List<SearchImageInput> initialPhotos;
   final InventorySearchGateway searchGateway;
   final Future<void> Function(Map<String, dynamic> params)? onRecordSale;
+  final VoidCallback? onOpenAccount;
 
   @override
   State<SalesScreen> createState() => _SalesScreenState();
@@ -102,7 +104,8 @@ class _SalesScreenState extends State<SalesScreen> {
 
   double _asDouble(dynamic value) => InventorySearch.parsePrice(value) ?? 0;
 
-  String _formatAmount(double amount) => amount == amount.roundToDouble()
+  String _formatEditableAmount(double amount) =>
+      amount == amount.roundToDouble()
       ? amount.toStringAsFixed(0)
       : amount.toStringAsFixed(2);
 
@@ -156,8 +159,6 @@ class _SalesScreenState extends State<SalesScreen> {
     );
     controller.addListener(() {
       if (!mounted) return;
-      // Keep the preferred mode in sync so subsequent photos start with the
-      // user's last explicitly chosen provider while still having clean state.
       if (identical(session, _currentPhoto)) {
         _preferredPhotoSearchMode = controller.searchMode;
         if (session.selectedItem != null &&
@@ -187,7 +188,7 @@ class _SalesScreenState extends State<SalesScreen> {
         _addPhotoInputs(files.map(SearchImageInput.fromXFile).toList());
       }
     } catch (error) {
-      _showMessage('Could not select photos: $error', isError: true);
+      _showMessage('Nem sikerült kiválasztani a fotókat: $error', isError: true);
     }
   }
 
@@ -202,7 +203,7 @@ class _SalesScreenState extends State<SalesScreen> {
         _addPhotoInputs([SearchImageInput.fromXFile(file)]);
       }
     } catch (error) {
-      _showMessage('Could not take a photo: $error', isError: true);
+      _showMessage('Nem sikerült elkészíteni a fotót: $error', isError: true);
     }
   }
 
@@ -211,7 +212,6 @@ class _SalesScreenState extends State<SalesScreen> {
     required bool triggerSetState,
   }) {
     if (inputs.isEmpty) return;
-    // Cancel any previous batch that is no longer active before starting a new batch.
     if (_stage != _SalesStage.matchingPhoto) {
       _disposePhotoSessions();
     } else {
@@ -241,7 +241,6 @@ class _SalesScreenState extends State<SalesScreen> {
     if (photo == null) return;
     if (photo.hasStartedAnalysis) return;
     photo.hasStartedAnalysis = true;
-    // Ensure a clean controller initialized to the current preferred mode.
     if (photo.controller.searchMode != _preferredPhotoSearchMode) {
       await photo.controller.switchSearchMode(
         _preferredPhotoSearchMode,
@@ -284,7 +283,7 @@ class _SalesScreenState extends State<SalesScreen> {
     final item = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Add custom sale item'),
+        title: const Text('Egyedi tétel hozzáadása'),
         content: Form(
           key: formKey,
           child: Column(
@@ -294,23 +293,27 @@ class _SalesScreenState extends State<SalesScreen> {
                 controller: _customNameController,
                 autofocus: true,
                 textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(labelText: 'Item name'),
+                decoration: const InputDecoration(labelText: 'Tétel neve'),
                 validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Enter an item name'
+                    ? 'Add meg a tétel nevét'
                     : null,
               ),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _customPriceController,
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                decoration: const InputDecoration(labelText: 'Price (Ft)'),
+                decoration: const InputDecoration(
+                  labelText: 'Ár (Ft)',
+                  suffixText: 'Ft',
+                ),
                 validator: (value) {
                   final price = double.tryParse(
                     value?.trim().replaceAll(',', '.') ?? '',
                   );
                   return price == null || price < 0
-                      ? 'Enter a valid non-negative price'
+                      ? 'Adj meg érvényes, nem negatív árat'
                       : null;
                 },
               ),
@@ -320,7 +323,7 @@ class _SalesScreenState extends State<SalesScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+            child: const Text('Mégse'),
           ),
           FilledButton(
             onPressed: () {
@@ -334,7 +337,7 @@ class _SalesScreenState extends State<SalesScreen> {
                 'is_custom': true,
               });
             },
-            child: const Text('Add item'),
+            child: const Text('Hozzáadás'),
           ),
         ],
       ),
@@ -365,7 +368,6 @@ class _SalesScreenState extends State<SalesScreen> {
     final photo = _currentPhoto;
     if (photo == null) return;
 
-    // Stop any in-flight request for the photo we are leaving.
     photo.controller.cancelPendingRequests();
 
     if (commitSelection && photo.selectedItem != null) {
@@ -399,7 +401,7 @@ class _SalesScreenState extends State<SalesScreen> {
   Future<bool> _confirmDiscard({
     required String title,
     required String content,
-    String confirmLabel = 'Discard',
+    String confirmLabel = 'Elvetés',
   }) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -409,11 +411,11 @@ class _SalesScreenState extends State<SalesScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Stay'),
+            child: const Text('Maradok'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.brick),
             child: Text(confirmLabel),
           ),
         ],
@@ -453,13 +455,12 @@ class _SalesScreenState extends State<SalesScreen> {
         final photo = _currentPhoto;
         if (photo != null && photo.selectedItem != null) {
           final leave = await _confirmDiscard(
-            title: 'Leave photo matching?',
+            title: 'Kilépsz a fotópárosításból?',
             content: _selectedItems.isNotEmpty
-                ? 'The item selected for this photo has not been added yet. '
-                      'Your ${_selectedItems.length} previously matched '
-                      'item${_selectedItems.length == 1 ? '' : 's'} will be kept.'
-                : 'Leaving will discard the item selected for this photo.',
-            confirmLabel: 'Leave',
+                ? 'Az ehhez a fotóhoz kijelölt tétel még nincs hozzáadva. '
+                      'A korábbi ${_selectedItems.length} párosított tétel megmarad.'
+                : 'Kilépéskor elvész az ehhez a fotóhoz kijelölt tétel.',
+            confirmLabel: 'Kilépés',
           );
           if (!leave || !mounted) return;
         }
@@ -475,11 +476,9 @@ class _SalesScreenState extends State<SalesScreen> {
       case _SalesStage.addOptions:
         if (_selectedItems.isNotEmpty) {
           final discard = await _confirmDiscard(
-            title: 'Discard this sale?',
+            title: 'Elveted ezt az eladást?',
             content:
-                'You have ${_selectedItems.length} matched '
-                'item${_selectedItems.length == 1 ? '' : 's'} that have not '
-                'been recorded yet.',
+                '${_selectedItems.length} kiválasztott tétel még nincs rögzítve.',
           );
           if (!discard || !mounted) return;
         }
@@ -511,7 +510,7 @@ class _SalesScreenState extends State<SalesScreen> {
     setState(() {
       _stage = _SalesStage.checkout;
       _discountController.text = '0';
-      _finalPriceController.text = _formatAmount(_listedTotal);
+      _finalPriceController.text = _formatEditableAmount(_listedTotal);
     });
   }
 
@@ -522,13 +521,13 @@ class _SalesScreenState extends State<SalesScreen> {
     final discount = parsed.clamp(0.0, 100.0).toDouble();
     _syncingPrices = true;
     if (discount != parsed) {
-      final text = _formatAmount(discount);
+      final text = _formatEditableAmount(discount);
       _discountController.value = TextEditingValue(
         text: text,
         selection: TextSelection.collapsed(offset: text.length),
       );
     }
-    _finalPriceController.text = _formatAmount(
+    _finalPriceController.text = _formatEditableAmount(
       _listedTotal * (1 - discount / 100),
     );
     _syncingPrices = false;
@@ -545,13 +544,13 @@ class _SalesScreenState extends State<SalesScreen> {
         : ((_listedTotal - amount) / _listedTotal * 100).clamp(0.0, 100.0);
     _syncingPrices = true;
     if (amount != parsed) {
-      final text = _formatAmount(amount);
+      final text = _formatEditableAmount(amount);
       _finalPriceController.value = TextEditingValue(
         text: text,
         selection: TextSelection.collapsed(offset: text.length),
       );
     }
-    _discountController.text = _formatAmount(discount);
+    _discountController.text = _formatEditableAmount(discount);
     _syncingPrices = false;
     setState(() {});
   }
@@ -562,7 +561,7 @@ class _SalesScreenState extends State<SalesScreen> {
     setState(() => _selectedItems.remove(item));
     final boundedDiscount = discount.clamp(0.0, 100.0).toDouble();
     _syncingPrices = true;
-    _finalPriceController.text = _formatAmount(
+    _finalPriceController.text = _formatEditableAmount(
       _listedTotal * (1 - boundedDiscount / 100),
     );
     _syncingPrices = false;
@@ -596,7 +595,7 @@ class _SalesScreenState extends State<SalesScreen> {
 
   String _formatDateTime(DateTime value) {
     String twoDigits(int number) => number.toString().padLeft(2, '0');
-    return '${value.year}-${twoDigits(value.month)}-${twoDigits(value.day)} '
+    return '${value.year}.${twoDigits(value.month)}.${twoDigits(value.day)}. '
         '${twoDigits(value.hour)}:${twoDigits(value.minute)}';
   }
 
@@ -654,14 +653,13 @@ class _SalesScreenState extends State<SalesScreen> {
         _isSaving = false;
         Navigator.pop(context, true);
       } else {
-        // Root route: never pop the last route (which produces a dark screen).
         _resetSaleWorkflow();
-        _showMessage('Sale recorded successfully!');
+        _showMessage('Eladás sikeresen rögzítve!');
       }
     } catch (error) {
       if (!mounted) return;
       setState(() => _isSaving = false);
-      _showMessage('Could not record sale: $error', isError: true);
+      _showMessage('Nem sikerült rögzíteni az eladást: $error', isError: true);
     }
   }
 
@@ -670,17 +668,17 @@ class _SalesScreenState extends State<SalesScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: isError ? Colors.red : Colors.green,
+        backgroundColor: isError ? AppColors.brick : AppColors.olive,
       ),
     );
   }
 
   String _appBarTitle() => switch (_stage) {
-    _SalesStage.checkout => 'Sale total',
-    _SalesStage.addOptions => 'Add sale items',
-    _SalesStage.manualSearch => 'Search inventory',
-    _SalesStage.matchingPhoto => 'Match sold items',
-    _SalesStage.start => 'Record a sale',
+    _SalesStage.checkout => 'Véglegesítés',
+    _SalesStage.addOptions => 'Kosár (${_selectedItems.length})',
+    _SalesStage.manualSearch => 'Keresés a készletben',
+    _SalesStage.matchingPhoto => 'Fotó párosítása',
+    _SalesStage.start => 'Eladás rögzítése',
   };
 
   @override
@@ -697,36 +695,21 @@ class _SalesScreenState extends State<SalesScreen> {
         appBar: AppBar(
           leading: _showExplicitBackArrow || canRoutePop
               ? IconButton(
-                  tooltip: 'Back',
+                  tooltip: 'Vissza',
                   icon: const Icon(Icons.arrow_back),
                   onPressed: _isSaving ? null : _handleBackNavigation,
                 )
               : null,
           title: Text(_appBarTitle()),
-          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
           actions: [
-            PopupMenuButton<String>(
-              tooltip: 'Navigate',
-              onSelected: (destination) {
-                final page = destination == 'inventory'
-                    ? const InventoryListScreen()
-                    : const SalesDashboardScreen();
-                Navigator.push<void>(
-                  context,
-                  MaterialPageRoute(builder: (_) => page),
-                );
-              },
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'inventory', child: Text('Inventory')),
-                PopupMenuItem(
-                  value: 'dashboard',
-                  child: Text('Sales dashboard'),
-                ),
-              ],
-            ),
+            if (widget.onOpenAccount != null && _stage == _SalesStage.start)
+              IconButton(
+                tooltip: 'Fiók',
+                onPressed: widget.onOpenAccount,
+                icon: const Icon(Icons.person_outline),
+              ),
           ],
         ),
-        backgroundColor: Colors.grey[100],
         body: switch (_stage) {
           _SalesStage.start => _buildPhotoPicker(),
           _SalesStage.matchingPhoto => _buildMatcher(),
@@ -741,49 +724,85 @@ class _SalesScreenState extends State<SalesScreen> {
   Widget _buildPhotoPicker() {
     return Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.point_of_sale, size: 72, color: Colors.blueGrey),
-            const SizedBox(height: 16),
-            const Text(
-              'Record a sale',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Choose photos of the sold items. Match each photo to an '
-              'inventory item, then review the sale total.',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: _pickGalleryPhotos,
-              icon: const Icon(Icons.photo_library),
-              label: const Text('Choose sold item photos'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _takePhoto,
-              icon: const Icon(Icons.camera_alt),
-              label: const Text('Take a photo'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _addCustomItem,
-              icon: const Icon(Icons.add),
-              label: const Text('Add custom item'),
-            ),
-            const SizedBox(height: 16),
-            const Text('Or select unsold inventory directly'),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _startManualSearch,
-              icon: const Icon(Icons.search),
-              label: const Text('Search inventory'),
-            ),
-          ],
+        padding: const EdgeInsets.all(20),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: AppColors.terracottaSoft,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: const Icon(
+                            Icons.photo_camera_outlined,
+                            size: 30,
+                            color: AppColors.terracotta,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Új eladás rögzítése',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Válassz fotót az eladott ruhákról a gyors párosításhoz, vagy keresd ki őket közvetlenül a készletből.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 22),
+                      FilledButton.icon(
+                        onPressed: _pickGalleryPhotos,
+                        icon: const Icon(Icons.photo_library_outlined),
+                        label: const Text('Fotók kiválasztása'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: _takePhoto,
+                        icon: const Icon(Icons.camera_alt_outlined),
+                        label: const Text('Fotózás kamerával'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: _QuickActionCard(
+                      icon: Icons.search,
+                      title: 'Keresés készletben',
+                      subtitle: 'Kategória vagy név alapján',
+                      onTap: _startManualSearch,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _QuickActionCard(
+                      icon: Icons.add_circle_outline,
+                      title: 'Egyedi tétel',
+                      subtitle: 'Készleten kívüli termék',
+                      onTap: _addCustomItem,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -791,44 +810,123 @@ class _SalesScreenState extends State<SalesScreen> {
 
   Widget _buildAddOptions() {
     return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              '${_selectedItems.length} item${_selectedItems.length == 1 ? '' : 's'} added',
-              style: Theme.of(context).textTheme.titleLarge,
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Card(
+                    color: AppColors.surfaceMuted,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${_selectedItems.length} tétel a kosárban',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            AppFormat.forint(_listedTotal),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  color: AppColors.terracotta,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_selectedItems.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 28),
+                      child: Text(
+                        'Még nincs tétel a kosárban.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: AppColors.inkMuted),
+                      ),
+                    )
+                  else
+                    for (final item in _selectedItems) ...[
+                      _buildSaleItemTile(item),
+                      const SizedBox(height: 8),
+                    ],
+                  const SizedBox(height: 12),
+                  Text(
+                    'További tétel hozzáadása',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _pickGalleryPhotos,
+                        icon: const Icon(
+                          Icons.photo_library_outlined,
+                          size: 18,
+                        ),
+                        label: const Text('Újabb fotó'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _takePhoto,
+                        icon: const Icon(Icons.camera_alt_outlined, size: 18),
+                        label: const Text('Kamera'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _startManualSearch,
+                        icon: const Icon(Icons.search, size: 18),
+                        label: const Text('Készletből'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _addCustomItem,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Egyedi tétel'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _pickGalleryPhotos,
-              icon: const Icon(Icons.photo_library),
-              label: const Text('Add another photo'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _takePhoto,
-              icon: const Icon(Icons.camera_alt),
-              label: const Text('Take another photo'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _startManualSearch,
-              icon: const Icon(Icons.search),
-              label: const Text('Add from inventory'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _addCustomItem,
-              icon: const Icon(Icons.add),
-              label: const Text('Add custom item'),
-            ),
-            const SizedBox(height: 12),
-            FilledButton.tonalIcon(
-              onPressed: _selectedItems.isEmpty ? null : _openCheckout,
-              icon: const Icon(Icons.arrow_forward),
-              label: const Text('Done adding items'),
+            DecoratedBox(
+              decoration: const BoxDecoration(
+                color: AppColors.surface,
+                border: Border(top: BorderSide(color: AppColors.border)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _selectedItems.isEmpty ? null : _openCheckout,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.olive,
+                      ),
+                      icon: const Icon(Icons.arrow_forward),
+                      label: const Text('Tovább a véglegesítéshez'),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -841,7 +939,7 @@ class _SalesScreenState extends State<SalesScreen> {
       key: const ValueKey('sales-manual-search'),
       controller: _manualSearchController,
       initiallyExpanded: true,
-      emptyMessage: 'No unsold inventory items found.',
+      emptyMessage: 'Nem található eladatlan termék.',
       isItemSelected: (item) =>
           _selectedItems.any((selected) => selected['id'] == item['id']),
       onItemTap: _toggleManualItem,
@@ -854,7 +952,7 @@ class _SalesScreenState extends State<SalesScreen> {
           TextButton.icon(
             onPressed: _handleBackNavigation,
             icon: const Icon(Icons.arrow_back),
-            label: const Text('Back'),
+            label: const Text('Vissza'),
           ),
           FilledButton.icon(
             onPressed: _selectedItems.isEmpty
@@ -864,7 +962,7 @@ class _SalesScreenState extends State<SalesScreen> {
                     setState(() => _stage = _SalesStage.addOptions);
                   },
             icon: const Icon(Icons.arrow_forward),
-            label: Text('Continue (${_selectedItems.length})'),
+            label: Text('Folytatás (${_selectedItems.length})'),
           ),
         ],
       ),
@@ -880,11 +978,34 @@ class _SalesScreenState extends State<SalesScreen> {
       key: ValueKey('sale-photo-${photo.id}'),
       controller: photo.controller,
       initiallyExpanded: true,
-      emptyMessage: 'No unsold inventory items found.',
-      topBanner: Text(
-        'Photo ${_currentPhotoIndex + 1} of ${_photos.length}  ·  '
-        '${_selectedItems.length} matched',
-        style: const TextStyle(fontWeight: FontWeight.bold),
+      emptyMessage: 'Nem található eladatlan termék.',
+      topBanner: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.terracottaSoft,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              'Fotó ${_currentPhotoIndex + 1} / ${_photos.length}',
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+                color: AppColors.terracotta,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${_selectedItems.length} párosítva',
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              color: AppColors.inkMuted,
+            ),
+          ),
+        ],
       ),
       isItemSelected: (item) => photo.selectedItem?['id'] == item['id'],
       isItemDisabled: (item) {
@@ -900,11 +1021,14 @@ class _SalesScreenState extends State<SalesScreen> {
         final selectedHere = photo.selectedItem?['id'] == item['id'];
         if (!alreadySelected || selectedHere) return null;
         return const ColoredBox(
-          color: Colors.black45,
+          color: Colors.black54,
           child: Center(
             child: Text(
-              'Already matched',
-              style: TextStyle(color: Colors.white),
+              'Már hozzáadva',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         );
@@ -918,17 +1042,18 @@ class _SalesScreenState extends State<SalesScreen> {
         children: [
           TextButton(
             onPressed: () => _advancePhoto(commitSelection: false),
-            child: const Text('Skip photo'),
+            child: const Text('Fotó kihagyása'),
           ),
           FilledButton.icon(
             onPressed: photo.controller.isLoading || photo.selectedItem == null
                 ? null
                 : () => _advancePhoto(commitSelection: true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.olive),
             icon: const Icon(Icons.check),
             label: Text(
               _currentPhotoIndex + 1 == _photos.length
-                  ? 'Finish matching'
-                  : 'Add & next',
+                  ? 'Párosítás kész'
+                  : 'Hozzáadás és következő',
             ),
           ),
         ],
@@ -945,155 +1070,248 @@ class _SalesScreenState extends State<SalesScreen> {
         ? 0.0
         : ((subtotal - finalTotal) / subtotal * 100).clamp(0.0, 100.0);
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Sale items (${_selectedItems.length})',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 8),
-          if (_selectedItems.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('No items matched. Go back and try again.'),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: _handleBackNavigation,
-                    icon: const Icon(Icons.arrow_back),
-                    label: const Text('Back to add items'),
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Eladott tételek (${_selectedItems.length})',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              if (_selectedItems.isEmpty)
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Nincs kiválasztott tétel. Lépj vissza és válassz legalább egy terméket.',
+                        ),
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          onPressed: _handleBackNavigation,
+                          icon: const Icon(Icons.arrow_back),
+                          label: const Text('Vissza a tételekhez'),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
-            )
-          else
-            ..._selectedItems.map(_buildSaleItemTile),
-          const Divider(height: 28),
-          _summaryRow('Listed total', subtotal),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _discountController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: _onDiscountChanged,
-            decoration: const InputDecoration(
-              labelText: 'Discount (%)',
-              suffixText: '%',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _finalPriceController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: _onFinalPriceChanged,
-            decoration: const InputDecoration(
-              labelText: 'Final price paid (Ft)',
-              suffixText: 'Ft',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 8),
-          _summaryRow('Discount amount', subtotal - finalTotal),
-          _summaryRow('Discount rate', discount, suffix: '%'),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            key: ValueKey('checkout-location-$_location'),
-            initialValue: _location,
-            decoration: const InputDecoration(
-              labelText: 'Sale location',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.store),
-            ),
-            items: _locations
-                .map(
-                  (location) =>
-                      DropdownMenuItem(value: location, child: Text(location)),
                 )
-                .toList(),
-            onChanged: (value) {
-              if (value != null) setState(() => _location = value);
-            },
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            key: ValueKey('checkout-payment-$_paymentMethod'),
-            initialValue: _paymentMethod,
-            decoration: const InputDecoration(
-              labelText: 'Payment method',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.payments),
-            ),
-            items: const [
-              DropdownMenuItem(value: 'cash', child: Text('Cash')),
-              DropdownMenuItem(value: 'card', child: Text('Card')),
-              DropdownMenuItem(value: 'mixed', child: Text('Mixed cash/card')),
-            ],
-            onChanged: (value) {
-              if (value != null) setState(() => _paymentMethod = value);
-            },
-          ),
-          const SizedBox(height: 12),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.schedule),
-            title: const Text('Sale time'),
-            subtitle: Text(_formatDateTime(_soldAt)),
-            trailing: const Icon(Icons.edit_calendar),
-            onTap: _chooseSaleDateTime,
-          ),
-          TextField(
-            controller: _notesController,
-            minLines: 2,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              labelText: 'Notes (optional)',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: _selectedItems.isEmpty || _isSaving
-                  ? null
-                  : _recordSale,
-              icon: _isSaving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.save),
-              label: Text(_isSaving ? 'Recording sale…' : 'Record sale'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.all(16),
-                backgroundColor: Colors.green[700],
+              else
+                for (final item in _selectedItems) ...[
+                  _buildSaleItemTile(item),
+                  const SizedBox(height: 8),
+                ],
+              const SizedBox(height: 8),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Összegzés és kedvezmény',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 12),
+                      _summaryRow('Listaár összesen', subtotal),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _discountController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              onChanged: _onDiscountChanged,
+                              decoration: const InputDecoration(
+                                labelText: 'Kedvezmény',
+                                suffixText: '%',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: _finalPriceController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              onChanged: _onFinalPriceChanged,
+                              decoration: const InputDecoration(
+                                labelText: 'Fizetendő ár',
+                                suffixText: 'Ft',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      _summaryRow('Kedvezmény összege', subtotal - finalTotal),
+                      _summaryRow('Kedvezmény aránya', discount, suffix: '%'),
+                    ],
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(height: 12),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Eladás részletei',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        key: ValueKey('checkout-location-$_location'),
+                        initialValue: _location,
+                        decoration: const InputDecoration(
+                          labelText: 'Üzlet',
+                          prefixIcon: Icon(Icons.storefront_outlined),
+                        ),
+                        items: _locations
+                            .map(
+                              (location) => DropdownMenuItem(
+                                value: location,
+                                child: Text(location),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value != null) setState(() => _location = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        key: ValueKey('checkout-payment-$_paymentMethod'),
+                        initialValue: _paymentMethod,
+                        decoration: const InputDecoration(
+                          labelText: 'Fizetési mód',
+                          prefixIcon: Icon(Icons.payments_outlined),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'cash',
+                            child: Text('Készpénz'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'card',
+                            child: Text('Kártya'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'mixed',
+                            child: Text('Készpénz + kártya'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() => _paymentMethod = value);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.schedule_outlined),
+                        title: const Text('Eladás időpontja'),
+                        subtitle: Text(_formatDateTime(_soldAt)),
+                        trailing: const Icon(Icons.edit_calendar_outlined),
+                        onTap: _chooseSaleDateTime,
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _notesController,
+                        minLines: 2,
+                        maxLines: 4,
+                        decoration: const InputDecoration(
+                          labelText: 'Megjegyzés (opcionális)',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: _selectedItems.isEmpty || _isSaving
+                    ? null
+                    : _recordSale,
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(Icons.check_circle_outline),
+                label: Text(
+                  _isSaving ? 'Eladás rögzítése…' : 'Eladás rögzítése',
+                ),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.all(16),
+                  backgroundColor: AppColors.olive,
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
           ),
-          const SizedBox(height: 16),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildSaleItemTile(Map<String, dynamic> item) {
+    final imageUrl = item['image_url']?.toString();
     return Card(
       child: ListTile(
-        title: Text(item['name']?.toString() ?? 'Unknown item'),
+        leading: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: imageUrl == null || imageUrl.isEmpty
+                ? const ColoredBox(
+                    color: AppColors.surfaceMuted,
+                    child: Icon(
+                      Icons.checkroom_outlined,
+                      color: AppColors.inkMuted,
+                    ),
+                  )
+                : CachedRemoteImage(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    thumbnail: true,
+                  ),
+          ),
+        ),
+        title: Text(
+          item['name']?.toString() ?? 'Ismeretlen termék',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
         subtitle: Text(
-          '${item['category'] ?? '-'} · ${item['gender'] ?? '-'} · '
-          'Listed ${_formatAmount(_asDouble(item['price_est']))} Ft',
+          '${item['category'] ?? 'Egyedi'} · ${AppFormat.forint(_asDouble(item['price_est']))}',
+          style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()]),
         ),
         trailing: IconButton(
-          tooltip: 'Remove from this sale',
+          tooltip: 'Eltávolítás',
           onPressed: () => _removeItem(item),
-          icon: const Icon(Icons.remove_circle_outline),
+          icon: const Icon(Icons.close, color: AppColors.inkMuted),
         ),
       ),
     );
@@ -1101,16 +1319,56 @@ class _SalesScreenState extends State<SalesScreen> {
 
   Widget _summaryRow(String label, double amount, {String suffix = ' Ft'}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label),
+          Text(label, style: const TextStyle(color: AppColors.inkMuted)),
           Text(
-            '${_formatAmount(amount)}$suffix',
-            style: const TextStyle(fontWeight: FontWeight.w600),
+            '${AppFormat.amount(amount)}$suffix',
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _QuickActionCard extends StatelessWidget {
+  const _QuickActionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: AppColors.terracotta, size: 24),
+              const SizedBox(height: 10),
+              Text(title, style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 2),
+              Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
+        ),
       ),
     );
   }

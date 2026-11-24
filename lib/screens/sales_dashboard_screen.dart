@@ -3,14 +3,33 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yoaron_app/widgets/cached_remote_image.dart';
 
+import '../theme/app_theme.dart';
+
 class SalesDashboardScreen extends StatefulWidget {
-  const SalesDashboardScreen({super.key});
+  const SalesDashboardScreen({super.key, this.onOpenAccount});
+
+  final VoidCallback? onOpenAccount;
 
   @override
   State<SalesDashboardScreen> createState() => _SalesDashboardScreenState();
 }
 
 class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
+  static const _huMonths = [
+    'Január',
+    'Február',
+    'Március',
+    'Április',
+    'Május',
+    'Június',
+    'Július',
+    'Augusztus',
+    'Szeptember',
+    'Október',
+    'November',
+    'December',
+  ];
+
   DateTime _displayedMonth = DateTime(
     DateTime.now().year,
     DateTime.now().month,
@@ -89,18 +108,19 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
       ? value.toDouble()
       : double.tryParse(value?.toString() ?? '') ?? 0;
 
-  String _money(double value) {
-    final formatted = value == value.roundToDouble()
-        ? value.toStringAsFixed(0)
-        : value.toStringAsFixed(2);
-    return '$formatted Ft';
-  }
+  String _money(double value) => AppFormat.forint(value);
 
   String _formatDateTime(DateTime value) {
     String twoDigits(int number) => number.toString().padLeft(2, '0');
-    return '${value.year}-${twoDigits(value.month)}-${twoDigits(value.day)} '
+    return '${value.year}.${twoDigits(value.month)}.${twoDigits(value.day)}. '
         '${twoDigits(value.hour)}:${twoDigits(value.minute)}';
   }
+
+  String _formatMonthYear(DateTime date) =>
+      '${date.year}. ${_huMonths[date.month - 1]}';
+
+  String _formatDayHeading(DateTime date) =>
+      '${date.year}. ${_huMonths[date.month - 1]} ${date.day}.';
 
   String _formatExportAmount(double value) => value == value.roundToDouble()
       ? value.toStringAsFixed(0)
@@ -134,7 +154,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
       final name = item['item_name']?.toString().trim() ?? '';
       final brand = item['brand']?.toString().trim() ?? '';
       if (brand.isEmpty || name.toLowerCase().contains(brand.toLowerCase())) {
-        return name.isEmpty ? 'Item' : name;
+        return name.isEmpty ? 'Termék' : name;
       }
       return name.isEmpty ? brand : '$brand $name';
     }
@@ -161,7 +181,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Daily sales log'),
+        title: const Text('Napi eladási napló'),
         content: SizedBox(
           width: 480,
           child: SingleChildScrollView(child: SelectableText(log)),
@@ -169,7 +189,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close'),
+            child: const Text('Bezárás'),
           ),
           FilledButton.icon(
             onPressed: () async {
@@ -178,13 +198,14 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Daily log copied to clipboard'),
+                    content: Text('Napi napló a vágólapra másolva.'),
+                    backgroundColor: AppColors.olive,
                   ),
                 );
               }
             },
             icon: const Icon(Icons.copy),
-            label: const Text('Copy log'),
+            label: const Text('Másolás'),
           ),
         ],
       ),
@@ -213,7 +234,6 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final monthSales = _sales;
     final monthRevenue = monthSales.fold<double>(
       0,
@@ -227,17 +247,21 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Daily sales'),
-        backgroundColor: theme.colorScheme.inversePrimary,
+        title: const Text('Eladási napló'),
         actions: [
           IconButton(
-            tooltip: 'Refresh sales',
+            tooltip: 'Frissítés',
             onPressed: _isLoading || _isSavingEdit ? null : _loadMonth,
             icon: const Icon(Icons.refresh),
           ),
+          if (widget.onOpenAccount != null)
+            IconButton(
+              tooltip: 'Fiók',
+              onPressed: widget.onOpenAccount,
+              icon: const Icon(Icons.person_outline),
+            ),
         ],
       ),
-      backgroundColor: Colors.grey[100],
       body: _isLoading && _sales.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : _error != null && _sales.isEmpty
@@ -245,17 +269,15 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
           : RefreshIndicator(
               onRefresh: _loadMonth,
               child: ListView(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(16),
                 children: [
                   _MonthStats(
-                    monthLabel: MaterialLocalizations.of(
-                      context,
-                    ).formatMonthYear(_displayedMonth),
+                    monthLabel: _formatMonthYear(_displayedMonth),
                     revenue: _money(monthRevenue),
                     saleCount: monthSales.length,
                     itemCount: monthItems,
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 16),
                   if (_error != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 12),
@@ -265,6 +287,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                     builder: (context, constraints) {
                       final calendar = _CalendarPanel(
                         month: _displayedMonth,
+                        monthTitle: _formatMonthYear(_displayedMonth),
                         selectedDate: _selectedDate,
                         dateKey: _dateKey,
                         summaryFor: _daySummary,
@@ -274,7 +297,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                             setState(() => _selectedDate = date),
                       );
                       final log = _DailySalesPanel(
-                        date: _selectedDate,
+                        dateTitle: _formatDayHeading(_selectedDate),
                         sales: selectedSales,
                         itemsFor: _itemsFor,
                         saleTotal: _saleTotal,
@@ -289,7 +312,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(flex: 5, child: calendar),
-                            const SizedBox(width: 18),
+                            const SizedBox(width: 16),
                             Expanded(flex: 4, child: log),
                           ],
                         );
@@ -299,6 +322,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                       );
                     },
                   ),
+                  const SizedBox(height: 16),
                 ],
               ),
             ),
@@ -327,7 +351,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
           ),
           'size': TextEditingController(text: item['size']?.toString() ?? ''),
           'price': TextEditingController(
-            text: _asDouble(item['actual_price']).toStringAsFixed(2),
+            text: _asDouble(item['actual_price']).toStringAsFixed(0),
           ),
         },
     };
@@ -345,7 +369,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
         context: context,
         builder: (dialogContext) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
-            title: const Text('Edit sale'),
+            title: const Text('Eladás szerkesztése'),
             content: SizedBox(
               width: 480,
               child: SingleChildScrollView(
@@ -354,8 +378,8 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const Text(
-                      'Removed items return to unsold inventory when you save.',
-                      style: TextStyle(color: Colors.blueGrey),
+                      'Az eltávolított tételek mentéskor visszakerülnek az eladatlan készletbe.',
+                      style: TextStyle(color: AppColors.inkMuted, fontSize: 13),
                     ),
                     const SizedBox(height: 12),
                     for (final item in editItems) ...[
@@ -363,12 +387,12 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                         children: [
                           Expanded(
                             child: Text(
-                              item['item_name']?.toString() ?? 'Item',
+                              item['item_name']?.toString() ?? 'Termék',
                               style: Theme.of(context).textTheme.titleSmall,
                             ),
                           ),
                           IconButton(
-                            tooltip: 'Remove item from sale',
+                            tooltip: 'Tétel eltávolítása',
                             onPressed: editItems.length <= 1
                                 ? null
                                 : () => setDialogState(() {
@@ -383,8 +407,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                       TextField(
                         controller: detailControllers[item['id']]!['name'],
                         decoration: const InputDecoration(
-                          labelText: 'Item name',
-                          border: OutlineInputBorder(),
+                          labelText: 'Termék neve',
                           isDense: true,
                         ),
                       ),
@@ -396,8 +419,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                               controller:
                                   detailControllers[item['id']]!['brand'],
                               decoration: const InputDecoration(
-                                labelText: 'Brand',
-                                border: OutlineInputBorder(),
+                                labelText: 'Márka',
                                 isDense: true,
                               ),
                             ),
@@ -408,8 +430,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                               controller:
                                   detailControllers[item['id']]!['category'],
                               decoration: const InputDecoration(
-                                labelText: 'Category',
-                                border: OutlineInputBorder(),
+                                labelText: 'Kategória',
                                 isDense: true,
                               ),
                             ),
@@ -424,8 +445,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                               controller:
                                   detailControllers[item['id']]!['size'],
                               decoration: const InputDecoration(
-                                labelText: 'Size',
-                                border: OutlineInputBorder(),
+                                labelText: 'Méret',
                                 isDense: true,
                               ),
                             ),
@@ -440,8 +460,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                                     decimal: true,
                                   ),
                               decoration: const InputDecoration(
-                                labelText: 'Sale price (Ft)',
-                                border: OutlineInputBorder(),
+                                labelText: 'Eladási ár (Ft)',
                                 isDense: true,
                               ),
                             ),
@@ -453,10 +472,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                     DropdownButtonFormField<String>(
                       key: ValueKey(location),
                       initialValue: location,
-                      decoration: const InputDecoration(
-                        labelText: 'Location',
-                        border: OutlineInputBorder(),
-                      ),
+                      decoration: const InputDecoration(labelText: 'Üzlet'),
                       items: const ['Csengery', 'Astoria']
                           .map(
                             (value) => DropdownMenuItem(
@@ -476,15 +492,17 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                       key: ValueKey(paymentMethod),
                       initialValue: paymentMethod,
                       decoration: const InputDecoration(
-                        labelText: 'Payment method',
-                        border: OutlineInputBorder(),
+                        labelText: 'Fizetési mód',
                       ),
                       items: const [
-                        DropdownMenuItem(value: 'cash', child: Text('Cash')),
-                        DropdownMenuItem(value: 'card', child: Text('Card')),
+                        DropdownMenuItem(
+                          value: 'cash',
+                          child: Text('Készpénz'),
+                        ),
+                        DropdownMenuItem(value: 'card', child: Text('Kártya')),
                         DropdownMenuItem(
                           value: 'mixed',
-                          child: Text('Mixed cash/card'),
+                          child: Text('Készpénz + kártya'),
                         ),
                       ],
                       onChanged: (value) {
@@ -496,9 +514,9 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                     const SizedBox(height: 8),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Sale date and time'),
+                      title: const Text('Eladás időpontja'),
                       subtitle: Text(_formatDateTime(soldAt)),
-                      trailing: const Icon(Icons.edit_calendar),
+                      trailing: const Icon(Icons.edit_calendar_outlined),
                       onTap: () async {
                         final date = await showDatePicker(
                           context: dialogContext,
@@ -530,17 +548,14 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                       minLines: 2,
                       maxLines: 4,
                       decoration: const InputDecoration(
-                        labelText: 'Notes',
-                        border: OutlineInputBorder(),
+                        labelText: 'Megjegyzés',
                       ),
                     ),
                     if (validationError != null) ...[
                       const SizedBox(height: 8),
                       Text(
                         validationError!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
+                        style: const TextStyle(color: AppColors.brick),
                       ),
                     ],
                   ],
@@ -550,7 +565,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Cancel'),
+                child: const Text('Mégse'),
               ),
               FilledButton(
                 onPressed: () {
@@ -568,7 +583,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                       prices.any((price) => !price.isFinite || price < 0)) {
                     setDialogState(
                       () => validationError =
-                          'Enter a valid non-negative price for each item.',
+                          'Adj meg érvényes, nem negatív árat minden tételhez.',
                     );
                     return;
                   }
@@ -602,7 +617,8 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                     ],
                   });
                 },
-                child: const Text('Save changes'),
+                style: FilledButton.styleFrom(backgroundColor: AppColors.olive),
+                child: const Text('Mentés'),
               ),
             ],
           ),
@@ -642,9 +658,12 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _isSavingEdit = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not update sale: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Nem sikerült módosítani az eladást: $error'),
+          backgroundColor: AppColors.brick,
+        ),
+      );
     }
   }
 
@@ -653,18 +672,19 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete entire sale?'),
+        title: const Text('Eladás törlése?'),
         content: const Text(
-          'This removes the sale record and returns its items to unsold inventory.',
+          'Ez törli az eladási bejegyzést, és a tételek visszakerülnek az eladatlan készletbe.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
+            child: const Text('Mégse'),
           ),
-          FilledButton.tonal(
+          FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Delete sale'),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.brick),
+            child: const Text('Törlés'),
           ),
         ],
       ),
@@ -683,9 +703,12 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _isSavingEdit = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not delete sale: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Nem sikerült törölni az eladást: $error'),
+          backgroundColor: AppColors.brick,
+        ),
+      );
     }
   }
 }
@@ -705,30 +728,59 @@ class _MonthStats extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme;
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: [
-        _StatCard(
-          label: '$monthLabel revenue',
-          value: revenue,
-          icon: Icons.payments_outlined,
-          color: color.primary,
-        ),
-        _StatCard(
-          label: 'Sales',
-          value: '$saleCount',
-          icon: Icons.receipt_long_outlined,
-          color: color.tertiary,
-        ),
-        _StatCard(
-          label: 'Items sold',
-          value: '$itemCount',
-          icon: Icons.inventory_2_outlined,
-          color: color.secondary,
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 600;
+        final cards = [
+          _StatCard(
+            label: '$monthLabel bevétel',
+            value: revenue,
+            icon: Icons.payments_outlined,
+            accentColor: AppColors.olive,
+            tintColor: AppColors.oliveSoft,
+          ),
+          _StatCard(
+            label: 'Eladások',
+            value: '$saleCount db',
+            icon: Icons.receipt_long_outlined,
+            accentColor: AppColors.terracotta,
+            tintColor: AppColors.terracottaSoft,
+          ),
+          _StatCard(
+            label: 'Eladott ruhák',
+            value: '$itemCount db',
+            icon: Icons.checkroom_outlined,
+            accentColor: AppColors.ink,
+            tintColor: AppColors.surfaceMuted,
+          ),
+        ];
+
+        if (compact) {
+          return Column(
+            children: [
+              cards[0],
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(child: cards[1]),
+                  const SizedBox(width: 10),
+                  Expanded(child: cards[2]),
+                ],
+              ),
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: cards[0]),
+            const SizedBox(width: 12),
+            Expanded(child: cards[1]),
+            const SizedBox(width: 12),
+            Expanded(child: cards[2]),
+          ],
+        );
+      },
     );
   }
 }
@@ -738,38 +790,51 @@ class _StatCard extends StatelessWidget {
     required this.label,
     required this.value,
     required this.icon,
-    required this.color,
+    required this.accentColor,
+    required this.tintColor,
   });
 
   final String label;
   final String value;
   final IconData icon;
-  final Color color;
+  final Color accentColor;
+  final Color tintColor;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    width: 250,
-    child: Card(
+  Widget build(BuildContext context) {
+    return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Row(
           children: [
-            CircleAvatar(
-              backgroundColor: color.withValues(alpha: 0.12),
-              foregroundColor: color,
-              child: Icon(icon),
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: tintColor,
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(icon, color: accentColor, size: 21),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: Theme.of(context).textTheme.bodySmall),
-                  const SizedBox(height: 3),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 2),
                   Text(
                     value,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ],
@@ -778,13 +843,14 @@ class _StatCard extends StatelessWidget {
           ],
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _CalendarPanel extends StatelessWidget {
   const _CalendarPanel({
     required this.month,
+    required this.monthTitle,
     required this.selectedDate,
     required this.dateKey,
     required this.summaryFor,
@@ -794,6 +860,7 @@ class _CalendarPanel extends StatelessWidget {
   });
 
   final DateTime month;
+  final String monthTitle;
   final DateTime selectedDate;
   final String Function(DateTime) dateKey;
   final Map<String, dynamic> Function(DateTime) summaryFor;
@@ -801,50 +868,63 @@ class _CalendarPanel extends StatelessWidget {
   final VoidCallback onNext;
   final ValueChanged<DateTime> onSelect;
 
+  String _compactRevenue(double value) {
+    if (value >= 1000) {
+      final thousands = value / 1000;
+      final formatted = thousands == thousands.roundToDouble()
+          ? thousands.toStringAsFixed(0)
+          : thousands.toStringAsFixed(1);
+      return '${formatted}e';
+    }
+    return '${value.round()}';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final monthName = MaterialLocalizations.of(context).formatMonthYear(month);
     final daysInMonth = DateUtils.getDaysInMonth(month.year, month.month);
     final offset = DateTime(month.year, month.month, 1).weekday - 1;
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Column(
           children: [
             Row(
               children: [
                 IconButton(
-                  tooltip: 'Previous month',
+                  tooltip: 'Előző hónap',
                   onPressed: onPrevious,
                   icon: const Icon(Icons.chevron_left),
                 ),
                 Expanded(
                   child: Text(
-                    monthName,
+                    monthTitle,
                     textAlign: TextAlign.center,
-                    style: theme.textTheme.titleLarge,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
                 IconButton(
-                  tooltip: 'Next month',
+                  tooltip: 'Következő hónap',
                   onPressed: onNext,
                   icon: const Icon(Icons.chevron_right),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Row(
-              children: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+              children: ['H', 'K', 'Sze', 'Cs', 'P', 'Szo', 'V']
                   .map(
                     (day) => Expanded(
                       child: Center(
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          padding: const EdgeInsets.symmetric(vertical: 6),
                           child: Text(
                             day,
-                            style: const TextStyle(color: Colors.grey),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.inkMuted,
+                            ),
                           ),
                         ),
                       ),
@@ -860,7 +940,7 @@ class _CalendarPanel extends StatelessWidget {
                 crossAxisCount: 7,
                 mainAxisSpacing: 5,
                 crossAxisSpacing: 5,
-                childAspectRatio: 0.9,
+                childAspectRatio: 0.92,
               ),
               itemBuilder: (context, index) {
                 final day = index - offset + 1;
@@ -869,16 +949,15 @@ class _CalendarPanel extends StatelessWidget {
                 final date = DateTime(month.year, month.month, day);
                 final summary = summaryFor(date);
                 final saleCount = summary['count'] as int;
+                final revenue = (summary['revenue'] as num).toDouble();
                 final selected = dateKey(date) == dateKey(selectedDate);
                 final today = dateKey(date) == dateKey(DateTime.now());
                 final background = selected
-                    ? theme.colorScheme.primary
+                    ? AppColors.terracotta
                     : saleCount > 0
-                    ? theme.colorScheme.primaryContainer
+                    ? AppColors.terracottaSoft
                     : Colors.transparent;
-                final foreground = selected
-                    ? theme.colorScheme.onPrimary
-                    : theme.colorScheme.onSurface;
+                final foreground = selected ? Colors.white : AppColors.ink;
 
                 return Material(
                   color: background,
@@ -890,33 +969,39 @@ class _CalendarPanel extends StatelessWidget {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(10),
                         border: today && !selected
-                            ? Border.all(color: theme.colorScheme.primary)
+                            ? Border.all(color: AppColors.terracotta, width: 1.4)
                             : null,
                       ),
-                      padding: EdgeInsets.zero,
                       child: Column(
-                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
                             '$day',
                             maxLines: 1,
-                            softWrap: false,
                             style: TextStyle(
+                              fontSize: 13,
                               color: foreground,
                               fontWeight: selected || saleCount > 0
-                                  ? FontWeight.bold
+                                  ? FontWeight.w700
                                   : FontWeight.normal,
                             ),
                           ),
                           if (saleCount > 0) ...[
                             const SizedBox(height: 1),
                             Text(
-                              '${summary['revenue'].round()} Ft',
+                              _compactRevenue(revenue),
                               maxLines: 1,
-                              softWrap: false,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: foreground, fontSize: 9),
+                              style: TextStyle(
+                                color: selected
+                                    ? Colors.white.withValues(alpha: 0.92)
+                                    : AppColors.terracotta,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
                             ),
                           ],
                         ],
@@ -935,7 +1020,7 @@ class _CalendarPanel extends StatelessWidget {
 
 class _DailySalesPanel extends StatelessWidget {
   const _DailySalesPanel({
-    required this.date,
+    required this.dateTitle,
     required this.sales,
     required this.itemsFor,
     required this.saleTotal,
@@ -945,7 +1030,7 @@ class _DailySalesPanel extends StatelessWidget {
     required this.onExport,
   });
 
-  final DateTime date;
+  final String dateTitle;
   final List<Map<String, dynamic>> sales;
   final List<dynamic> Function(Map<String, dynamic>) itemsFor;
   final double Function(Map<String, dynamic>) saleTotal;
@@ -968,7 +1053,7 @@ class _DailySalesPanel extends StatelessWidget {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -976,30 +1061,32 @@ class _DailySalesPanel extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    localizations.formatMediumDate(date),
-                    style: Theme.of(context).textTheme.titleLarge,
+                    dateTitle,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
                 TextButton.icon(
                   onPressed: sales.isEmpty ? null : onExport,
-                  icon: const Icon(Icons.ios_share),
+                  icon: const Icon(Icons.ios_share, size: 18),
                   label: const Text('Export'),
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(
-              '${money(dayRevenue)} · ${sales.length} sales · $dayItemCount items',
-              style: Theme.of(context).textTheme.bodyMedium,
+              '${money(dayRevenue)} · ${sales.length} eladás · $dayItemCount termék',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
             ),
-            const Divider(height: 24),
+            const Divider(height: 22),
             if (sales.isEmpty)
               const Padding(
-                padding: EdgeInsets.symmetric(vertical: 30),
+                padding: EdgeInsets.symmetric(vertical: 28),
                 child: Text(
-                  'No sales recorded for this day.',
+                  'Ezen a napon nem volt rögzített eladás.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey),
+                  style: TextStyle(color: AppColors.inkMuted),
                 ),
               )
             else
@@ -1013,20 +1100,21 @@ class _DailySalesPanel extends StatelessWidget {
                     ? recorderName!
                     : recorderEmail ??
                           sale['recorded_by']?.toString() ??
-                          'Unknown user';
-                final recorderLabel =
-                    (recorderName?.isNotEmpty ?? false) &&
-                        (recorderEmail?.isNotEmpty ?? false) &&
-                        recorderName != recorderEmail
-                    ? '$recorder ($recorderEmail)'
-                    : recorder;
+                          'Ismeretlen';
                 final items = itemsFor(sale);
+                final paymentLabel = AppFormat.paymentMethod(
+                  sale['payment_method']?.toString(),
+                );
 
                 return ExpansionTile(
                   tilePadding: EdgeInsets.zero,
-                  childrenPadding: const EdgeInsets.only(bottom: 12),
-                  leading: const CircleAvatar(
-                    child: Icon(Icons.receipt_long_outlined),
+                  shape: const Border(),
+                  collapsedShape: const Border(),
+                  childrenPadding: const EdgeInsets.only(bottom: 10),
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.surfaceMuted,
+                    foregroundColor: AppColors.ink,
+                    child: const Icon(Icons.receipt_long_outlined, size: 20),
                   ),
                   title: Row(
                     children: [
@@ -1034,17 +1122,26 @@ class _DailySalesPanel extends StatelessWidget {
                         child: Text(
                           localizations.formatTimeOfDay(
                             TimeOfDay.fromDateTime(soldAt),
+                            alwaysUse24HourFormat: true,
                           ),
+                          style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
                       Text(
                         money(saleTotal(sale)),
-                        style: Theme.of(context).textTheme.titleSmall,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: AppColors.olive,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
                       ),
                     ],
                   ),
                   subtitle: Text(
-                    '${sale['location']} · ${sale['payment_method']} · $recorderLabel',
+                    '${sale['location']} · $paymentLabel · $recorder',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.inkMuted,
+                    ),
                   ),
                   children: [
                     Align(
@@ -1054,13 +1151,20 @@ class _DailySalesPanel extends StatelessWidget {
                         children: [
                           TextButton.icon(
                             onPressed: () => onEdit(sale),
-                            icon: const Icon(Icons.edit_outlined),
-                            label: const Text('Edit sale'),
+                            icon: const Icon(Icons.edit_outlined, size: 18),
+                            label: const Text('Szerkesztés'),
                           ),
                           TextButton.icon(
                             onPressed: () => onDelete(sale),
-                            icon: const Icon(Icons.delete_outline),
-                            label: const Text('Delete sale'),
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              size: 18,
+                              color: AppColors.brick,
+                            ),
+                            label: const Text(
+                              'Törlés',
+                              style: TextStyle(color: AppColors.brick),
+                            ),
                           ),
                         ],
                       ),
@@ -1068,18 +1172,21 @@ class _DailySalesPanel extends StatelessWidget {
                     for (final item in items)
                       ListTile(
                         dense: true,
-                        contentPadding: const EdgeInsets.only(left: 12),
+                        contentPadding: const EdgeInsets.only(left: 8),
                         leading: _saleItemThumbnail(context, item),
                         onTap: _saleItemImageUrl(item) == null
                             ? null
                             : () => _showSaleItemImage(context, item),
-                        title: Text(item['item_name']?.toString() ?? 'Item'),
+                        title: Text(
+                          item['item_name']?.toString() ?? 'Termék',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
                         subtitle: Text(
                           [
                                 item['brand']?.toString(),
                                 item['category']?.toString(),
                                 item['size']?.toString(),
-                                'Sale price: ${money(_readPrice(item['actual_price']))}',
+                                money(_readPrice(item['actual_price'])),
                               ]
                               .whereType<String>()
                               .where((value) => value.isNotEmpty)
@@ -1089,7 +1196,10 @@ class _DailySalesPanel extends StatelessWidget {
                     if ((sale['notes']?.toString() ?? '').trim().isNotEmpty)
                       ListTile(
                         dense: true,
-                        leading: const Icon(Icons.notes),
+                        leading: const Icon(
+                          Icons.notes,
+                          color: AppColors.inkMuted,
+                        ),
                         title: Text(sale['notes'].toString()),
                       ),
                   ],
@@ -1116,23 +1226,31 @@ class _DailySalesPanel extends StatelessWidget {
   Widget _saleItemThumbnail(BuildContext context, dynamic item) {
     final imageUrl = _saleItemImageUrl(item);
     if (imageUrl == null) {
-      return const SizedBox(
-        width: 48,
-        height: 48,
-        child: Icon(Icons.image_not_supported_outlined),
+      return Container(
+        width: 46,
+        height: 46,
+        decoration: BoxDecoration(
+          color: AppColors.surfaceMuted,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(
+          Icons.checkroom_outlined,
+          size: 20,
+          color: AppColors.inkMuted,
+        ),
       );
     }
     return ClipRRect(
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(8),
       child: CachedRemoteImage(
         imageUrl,
-        width: 48,
-        height: 48,
+        width: 46,
+        height: 46,
         fit: BoxFit.cover,
         thumbnail: true,
         errorBuilder: (context, error, stackTrace) => const SizedBox(
-          width: 48,
-          height: 48,
+          width: 46,
+          height: 46,
           child: Icon(Icons.broken_image_outlined),
         ),
       ),
@@ -1148,25 +1266,34 @@ class _DailySalesPanel extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: Stack(
           children: [
-            InteractiveViewer(
-              child: CachedRemoteImage(
-                imageUrl,
-                fit: BoxFit.contain,
-                cacheWidth: null,
-                errorBuilder: (context, error, stackTrace) => const SizedBox(
-                  width: 320,
-                  height: 320,
-                  child: Center(child: Icon(Icons.broken_image_outlined, size: 48)),
+            ColoredBox(
+              color: AppColors.ink,
+              child: InteractiveViewer(
+                child: CachedRemoteImage(
+                  imageUrl,
+                  fit: BoxFit.contain,
+                  cacheWidth: null,
+                  errorBuilder: (context, error, stackTrace) => const SizedBox(
+                    width: 320,
+                    height: 320,
+                    child: Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        size: 48,
+                        color: Colors.white54,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
             Positioned(
-              top: 4,
-              right: 4,
+              top: 8,
+              right: 8,
               child: IconButton.filledTonal(
                 onPressed: () => Navigator.pop(dialogContext),
                 icon: const Icon(Icons.close),
-                tooltip: 'Close image',
+                tooltip: 'Bezárás',
               ),
             ),
           ],
@@ -1189,16 +1316,21 @@ class _ErrorPanel extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.lock_outline, size: 42),
+          const Icon(Icons.error_outline, size: 42, color: AppColors.brick),
           const SizedBox(height: 12),
           const Text(
-            'Could not load sales. Confirm the sales migrations are applied and you are signed in.',
+            'Nem sikerült betölteni az eladási naplót.',
             textAlign: TextAlign.center,
+            style: TextStyle(fontWeight: FontWeight.w600),
           ),
-          const SizedBox(height: 8),
-          Text(message, textAlign: TextAlign.center),
-          const SizedBox(height: 12),
-          FilledButton(onPressed: onRetry, child: const Text('Retry')),
+          const SizedBox(height: 6),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 14),
+          FilledButton(onPressed: onRetry, child: const Text('Újrapróbálás')),
         ],
       ),
     ),
@@ -1212,8 +1344,11 @@ class _InlineError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-    color: Theme.of(context).colorScheme.errorContainer,
-    borderRadius: BorderRadius.circular(8),
-    child: Padding(padding: const EdgeInsets.all(12), child: Text(message)),
+    color: AppColors.brickSoft,
+    borderRadius: BorderRadius.circular(10),
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Text(message, style: const TextStyle(color: AppColors.brick)),
+    ),
   );
 }

@@ -9,6 +9,7 @@ import 'package:yoaron_app/screens/sales_screen.dart';
 import 'package:yoaron_app/screens/search_screen.dart';
 import 'package:yoaron_app/services/image_inventory_search.dart';
 import 'package:yoaron_app/services/inventory_search.dart';
+import 'package:yoaron_app/theme/app_theme.dart';
 import 'package:yoaron_app/widgets/inventory_search_view.dart';
 
 // 1x1 transparent PNG so Image.memory decodes cleanly in widget tests.
@@ -29,6 +30,8 @@ SearchImageInput _testPhoto(String id) => SearchImageInput(
   mimeType: 'image/png',
   initialBytes: _validPngBytes,
 );
+
+Widget _themed(Widget home) => MaterialApp(theme: AppTheme.light(), home: home);
 
 class _ImageCallRecord {
   _ImageCallRecord(this.mode, this.criteria);
@@ -179,8 +182,8 @@ void main() {
       };
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: SalesScreen(
+        _themed(
+          SalesScreen(
             searchGateway: gateway,
             initialPhotos: [_testPhoto('p1'), _testPhoto('p2')],
           ),
@@ -188,17 +191,17 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Photo 1 of 2  ·  0 matched'), findsOneWidget);
+      expect(find.text('Fotó 1 / 2'), findsOneWidget);
       await _tapVisible(tester, find.text('Vector Item 1'));
-      await tester.tap(find.text('Add & next'));
+      await tester.tap(find.text('Hozzáadás és következő'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Photo 2 of 2  ·  1 matched'), findsOneWidget);
+      expect(find.text('Fotó 2 / 2'), findsOneWidget);
       await _tapVisible(tester, find.text('Vector Item 2'));
-      await tester.tap(find.text('Finish matching'));
+      await tester.tap(find.text('Párosítás kész'));
       await tester.pumpAndSettle();
 
-      expect(find.text('2 items added'), findsOneWidget);
+      expect(find.text('2 tétel a kosárban'), findsOneWidget);
       expect(gateway.imageCalls.length, 2);
     });
 
@@ -220,13 +223,16 @@ void main() {
               resolvedMode: ImageSearchMode.embedded,
             );
           }
-          // First Gemini call -> photo 1 (hoodie / kék), second -> photo 2 (Póló / fehér).
           final geminiCount = gateway.imageCalls
               .where((c) => c.mode == ImageSearchMode.gemini)
               .length;
           if (geminiCount == 1) {
             return const ImageInventorySearchResult(
-              aiCriteria: {'category': 'hoodie', 'gender': 'férfi', 'color': 'kék'},
+              aiCriteria: {
+                'category': 'hoodie',
+                'gender': 'férfi',
+                'color': 'kék',
+              },
               criteria: InventorySearchCriteria(
                 category: 'hoodie',
                 gender: 'férfi',
@@ -267,8 +273,8 @@ void main() {
         };
 
         await tester.pumpWidget(
-          MaterialApp(
-            home: SalesScreen(
+          _themed(
+            SalesScreen(
               searchGateway: gateway,
               initialPhotos: [_testPhoto('p1'), _testPhoto('p2')],
             ),
@@ -276,15 +282,13 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Switch photo 1 to Gemini.
-        await _switchModeInUi(tester, 'Gemini analysis');
+        await _switchModeInUi(tester, 'AI elemzés (Gemini)');
         expect(find.text('Blue Hoodie'), findsOneWidget);
 
         await _tapVisible(tester, find.text('Blue Hoodie'));
-        await tester.tap(find.text('Add & next'));
+        await tester.tap(find.text('Hozzáadás és következő'));
         await tester.pumpAndSettle();
 
-        // Photo 2 should automatically start fresh in Gemini with clean input criteria!
         final photo2Call = gateway.imageCalls.last;
         expect(photo2Call.mode, ImageSearchMode.gemini);
         expect(photo2Call.criteria.category, 'Minden');
@@ -292,10 +296,10 @@ void main() {
         expect(find.text('White Tee'), findsOneWidget);
 
         await _tapVisible(tester, find.text('White Tee'));
-        await tester.tap(find.text('Finish matching'));
+        await tester.tap(find.text('Párosítás kész'));
         await tester.pumpAndSettle();
 
-        expect(find.text('2 items added'), findsOneWidget);
+        expect(find.text('2 tétel a kosárban'), findsOneWidget);
       },
     );
 
@@ -307,7 +311,11 @@ void main() {
         gateway.onSearchByImage = (mode, criteria, sort, idx) async {
           if (mode == ImageSearchMode.gemini) {
             return ImageInventorySearchResult(
-              aiCriteria: const {'category': 'dzseki', 'gender': 'férfi', 'color': 'fekete'},
+              aiCriteria: const {
+                'category': 'dzseki',
+                'gender': 'férfi',
+                'color': 'fekete',
+              },
               criteria: const InventorySearchCriteria(
                 category: 'dzseki',
                 gender: 'férfi',
@@ -343,8 +351,8 @@ void main() {
         };
 
         await tester.pumpWidget(
-          MaterialApp(
-            home: SalesScreen(
+          _themed(
+            SalesScreen(
               searchGateway: gateway,
               initialPhotos: [
                 _testPhoto('p1'),
@@ -356,33 +364,30 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Photo 1: Vector
         await _tapVisible(tester, find.text('Vector Shirt 0'));
-        await tester.tap(find.text('Add & next'));
+        await tester.tap(find.text('Hozzáadás és következő'));
         await tester.pumpAndSettle();
 
-        // Photo 2: Switch Vector -> Gemini
-        await _switchModeInUi(tester, 'Gemini analysis');
+        await _switchModeInUi(tester, 'AI elemzés (Gemini)');
         await _tapVisible(tester, find.text('Gemini Jacket 2'));
-        await tester.tap(find.text('Add & next'));
+        await tester.tap(find.text('Hozzáadás és következő'));
         await tester.pumpAndSettle();
 
-        // Photo 3: Starts in Gemini, then switch Gemini -> Vector -> Gemini -> Vector
-        await _switchModeInUi(tester, 'Embedded vectors');
+        await _switchModeInUi(tester, 'Vizuális keresés (Gyors)');
         expect(gateway.imageCalls.last.criteria.category, 'Minden');
         expect(gateway.imageCalls.last.criteria.color, '');
 
-        await _switchModeInUi(tester, 'Gemini analysis');
-        await _switchModeInUi(tester, 'Embedded vectors');
+        await _switchModeInUi(tester, 'AI elemzés (Gemini)');
+        await _switchModeInUi(tester, 'Vizuális keresés (Gyors)');
         expect(gateway.imageCalls.last.criteria.category, 'Minden');
         expect(gateway.imageCalls.last.criteria.color, '');
 
         final lastIdx = gateway.imageCalls.length - 1;
         await _tapVisible(tester, find.text('Vector Shirt $lastIdx'));
-        await tester.tap(find.text('Finish matching'));
+        await tester.tap(find.text('Párosítás kész'));
         await tester.pumpAndSettle();
 
-        expect(find.text('3 items added'), findsOneWidget);
+        expect(find.text('3 tétel a kosárban'), findsOneWidget);
       },
     );
 
@@ -413,7 +418,11 @@ void main() {
             aiCriteria: null,
             criteria: criteria,
             matches: [
-              {'id': 'recovered-2', 'name': 'Recovered Second Item', 'price_est': 6000},
+              {
+                'id': 'recovered-2',
+                'name': 'Recovered Second Item',
+                'price_est': 6000,
+              },
             ],
             usedFallback: false,
             embedding: const [0.2],
@@ -422,8 +431,8 @@ void main() {
         };
 
         await tester.pumpWidget(
-          MaterialApp(
-            home: SalesScreen(
+          _themed(
+            SalesScreen(
               searchGateway: gateway,
               initialPhotos: [_testPhoto('p1'), _testPhoto('p2')],
             ),
@@ -431,25 +440,22 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Match photo 1.
         await _tapVisible(tester, find.text('Saved First Item'));
-        await tester.tap(find.text('Add & next'));
+        await tester.tap(find.text('Hozzáadás és következő'));
         await tester.pumpAndSettle();
 
-        // Photo 2 fails first time; user sees error & Retry analysis button.
-        expect(find.text('Photo 2 of 2  ·  1 matched'), findsOneWidget);
-        expect(find.text('Retry analysis'), findsOneWidget);
+        expect(find.text('Fotó 2 / 2'), findsOneWidget);
+        expect(find.text('Elemzés újrapróbálása'), findsOneWidget);
 
-        // Retry succeeds!
-        await tester.tap(find.text('Retry analysis'));
+        await tester.tap(find.text('Elemzés újrapróbálása'));
         await tester.pumpAndSettle();
         expect(find.text('Recovered Second Item'), findsOneWidget);
 
         await _tapVisible(tester, find.text('Recovered Second Item'));
-        await tester.tap(find.text('Finish matching'));
+        await tester.tap(find.text('Párosítás kész'));
         await tester.pumpAndSettle();
 
-        expect(find.text('2 items added'), findsOneWidget);
+        expect(find.text('2 tétel a kosárban'), findsOneWidget);
       },
     );
   });
@@ -462,8 +468,8 @@ void main() {
         final submitCompleter = Completer<void>();
 
         await tester.pumpWidget(
-          MaterialApp(
-            home: SalesScreen(
+          _themed(
+            SalesScreen(
               initialItems: const [
                 {
                   'id': 'item-1',
@@ -483,30 +489,30 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Done adding items'));
+        await tester.tap(find.text('Tovább a véglegesítéshez'));
         await tester.pumpAndSettle();
 
-        final recordButton = find.widgetWithText(FilledButton, 'Record sale');
+        final recordButton = find.widgetWithText(
+          FilledButton,
+          'Eladás rögzítése',
+        );
         await tester.ensureVisible(recordButton);
         await tester.tap(recordButton);
         await tester.pump();
 
-        // Double-tap while saving must be ignored!
         final savingButton = find.widgetWithText(
           FilledButton,
-          'Recording sale…',
+          'Eladás rögzítése…',
         );
         await tester.tap(savingButton, warnIfMissed: false);
         await tester.pump();
         expect(submitCount, 1);
 
-        // Finish submission.
         submitCompleter.complete();
         await tester.pumpAndSettle();
 
-        // Root screen is alive and reset to the functional start screen!
-        expect(find.text('Choose sold item photos'), findsOneWidget);
-        expect(find.text('Sale recorded successfully!'), findsOneWidget);
+        expect(find.text('Fotók kiválasztása'), findsOneWidget);
+        expect(find.text('Eladás sikeresen rögzítve!'), findsOneWidget);
       },
     );
 
@@ -516,8 +522,8 @@ void main() {
       bool? popResult;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(
+        _themed(
+          Builder(
             builder: (context) => Scaffold(
               body: Center(
                 child: FilledButton(
@@ -539,7 +545,7 @@ void main() {
                       ),
                     );
                   },
-                  child: const Text('Open sale'),
+                  child: const Text('Eladás megnyitása'),
                 ),
               ),
             ),
@@ -547,19 +553,22 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text('Open sale'));
+      await tester.tap(find.text('Eladás megnyitása'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Done adding items'));
+      await tester.tap(find.text('Tovább a véglegesítéshez'));
       await tester.pumpAndSettle();
 
-      final recordButton = find.widgetWithText(FilledButton, 'Record sale');
+      final recordButton = find.widgetWithText(
+        FilledButton,
+        'Eladás rögzítése',
+      );
       await tester.ensureVisible(recordButton);
       await tester.tap(recordButton);
       await tester.pumpAndSettle();
 
       expect(popResult, isTrue);
-      expect(find.text('Open sale'), findsOneWidget);
+      expect(find.text('Eladás megnyitása'), findsOneWidget);
     });
   });
 
@@ -567,11 +576,11 @@ void main() {
     testWidgets(
       'back arrow escapes 0-match photo search cleanly without getting trapped',
       (tester) async {
-        final gateway = _TestGateway(); // returns 0 matches
+        final gateway = _TestGateway();
 
         await tester.pumpWidget(
-          MaterialApp(
-            home: SalesScreen(
+          _themed(
+            SalesScreen(
               searchGateway: gateway,
               initialPhotos: [_testPhoto('empty-photo')],
             ),
@@ -579,14 +588,14 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(find.text('No unsold inventory items found.'), findsOneWidget);
+        expect(find.text('Nem található eladatlan termék.'), findsOneWidget);
         final backButton = find.byIcon(Icons.arrow_back);
         expect(backButton, findsOneWidget);
 
         await tester.tap(backButton);
         await tester.pumpAndSettle();
 
-        expect(find.text('Choose sold item photos'), findsOneWidget);
+        expect(find.text('Fotók kiválasztása'), findsOneWidget);
       },
     );
 
@@ -598,8 +607,8 @@ void main() {
         gateway.onSearchByImage = (mode, criteria, sort, idx) => pending.future;
 
         await tester.pumpWidget(
-          MaterialApp(
-            home: SalesScreen(
+          _themed(
+            SalesScreen(
               searchGateway: gateway,
               initialPhotos: [_testPhoto('loading-photo')],
             ),
@@ -612,9 +621,8 @@ void main() {
         await tester.tap(find.byIcon(Icons.arrow_back));
         await tester.pumpAndSettle();
 
-        expect(find.text('Choose sold item photos'), findsOneWidget);
+        expect(find.text('Fotók kiválasztása'), findsOneWidget);
 
-        // Late completion does not crash or change screens.
         pending.complete(
           const ImageInventorySearchResult(
             aiCriteria: null,
@@ -624,7 +632,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.text('Choose sold item photos'), findsOneWidget);
+        expect(find.text('Fotók kiválasztása'), findsOneWidget);
       },
     );
 
@@ -632,8 +640,8 @@ void main() {
       'back arrow asks confirmation before discarding already matched items',
       (tester) async {
         await tester.pumpWidget(
-          const MaterialApp(
-            home: SalesScreen(
+          _themed(
+            const SalesScreen(
               initialItems: [
                 {'id': 'm-1', 'name': 'Matched Coat', 'price_est': 14000},
               ],
@@ -642,23 +650,21 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(find.text('1 item added'), findsOneWidget);
+        expect(find.text('1 tétel a kosárban'), findsOneWidget);
         await tester.tap(find.byIcon(Icons.arrow_back));
         await tester.pumpAndSettle();
 
-        expect(find.text('Discard this sale?'), findsOneWidget);
+        expect(find.text('Elveted ezt az eladást?'), findsOneWidget);
 
-        // Cancel -> stay on add options with item preserved.
-        await tester.tap(find.text('Stay'));
+        await tester.tap(find.text('Maradok'));
         await tester.pumpAndSettle();
-        expect(find.text('1 item added'), findsOneWidget);
+        expect(find.text('1 tétel a kosárban'), findsOneWidget);
 
-        // Confirm discard -> returns to start screen.
         await tester.tap(find.byIcon(Icons.arrow_back));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Discard'));
+        await tester.tap(find.text('Elvetés'));
         await tester.pumpAndSettle();
-        expect(find.text('Choose sold item photos'), findsOneWidget);
+        expect(find.text('Fotók kiválasztása'), findsOneWidget);
       },
     );
   });
@@ -670,23 +676,21 @@ void main() {
         final gateway = _TestGateway();
 
         // 1. SalesScreen manual search
-        await tester.pumpWidget(
-          MaterialApp(home: SalesScreen(searchGateway: gateway)),
-        );
+        await tester.pumpWidget(_themed(SalesScreen(searchGateway: gateway)));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Search inventory'));
+        await tester.tap(find.text('Keresés készletben'));
         await tester.pumpAndSettle();
 
         expect(find.byType(InventorySearchView), findsOneWidget);
-        expect(find.text('Search filters'), findsOneWidget);
-        expect(find.text('Sort matches'), findsOneWidget);
-        expect(find.text('Photo search method'), findsNothing);
+        expect(find.text('Szűrők'), findsOneWidget);
+        expect(find.text('Rendezés'), findsOneWidget);
+        expect(find.text('Keresési mód'), findsNothing);
         expect(find.text('Manual Tee'), findsOneWidget);
 
         // 2. InventoryListScreen
         await tester.pumpWidget(
-          MaterialApp(
-            home: InventoryListScreen(
+          _themed(
+            InventoryListScreen(
               searchGateway: gateway,
               checkMissingEmbeddings: false,
             ),
@@ -694,14 +698,14 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.byType(InventorySearchView), findsOneWidget);
-        expect(find.text('Search filters'), findsOneWidget);
-        expect(find.text('Photo search method'), findsNothing);
+        expect(find.text('Szűrők'), findsOneWidget);
+        expect(find.text('Keresési mód'), findsNothing);
         expect(find.text('Manual Tee'), findsOneWidget);
 
         // 3. SearchScreen (manual, no image)
         await tester.pumpWidget(
-          MaterialApp(
-            home: SearchScreen(
+          _themed(
+            SearchScreen(
               key: const ValueKey('search-manual'),
               searchGateway: gateway,
             ),
@@ -709,15 +713,15 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.byType(InventorySearchView), findsOneWidget);
-        expect(find.text('Search filters'), findsOneWidget);
-        expect(find.text('Sort matches'), findsOneWidget);
-        expect(find.text('Photo search method'), findsNothing);
+        expect(find.text('Szűrők'), findsOneWidget);
+        expect(find.text('Rendezés'), findsOneWidget);
+        expect(find.text('Keresési mód'), findsNothing);
         expect(find.text('Manual Tee'), findsOneWidget);
 
-        // 4. SearchScreen with image -> displays image & Photo search method
+        // 4. SearchScreen with image -> displays image & Keresési mód
         await tester.pumpWidget(
-          MaterialApp(
-            home: SearchScreen(
+          _themed(
+            SearchScreen(
               key: const ValueKey('search-with-image'),
               searchGateway: gateway,
               initialImage: _testPhoto('search-img'),
@@ -726,26 +730,26 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.byType(InventorySearchView), findsOneWidget);
-        expect(find.text('Photo search method'), findsOneWidget);
+        expect(find.text('Keresési mód'), findsOneWidget);
 
-        // Tapping the thumbnail opens a full-screen InteractiveViewer dialog.
+        // Tapping thumbnail opens full-screen InteractiveViewer dialog.
         await tester.tap(find.byIcon(Icons.zoom_in));
         await tester.pumpAndSettle();
         expect(find.byType(InteractiveViewer), findsOneWidget);
-        await tester.tap(find.byTooltip('Close'));
+        await tester.tap(find.byTooltip('Bezárás'));
         await tester.pumpAndSettle();
         expect(find.byType(InteractiveViewer), findsNothing);
 
-        // Folding the photo section hides the thumbnail and method dropdown.
+        // Folding photo section hides thumbnail & method dropdown.
         await tester.tap(find.byKey(const ValueKey('toggle-image-section')));
         await tester.pumpAndSettle();
-        expect(find.text('Photo search method'), findsNothing);
-        expect(find.text('Show'), findsOneWidget);
+        expect(find.text('Keresési mód'), findsNothing);
+        expect(find.text('Mutat'), findsOneWidget);
 
-        // Expanding it restores the photo section.
+        // Expanding it restores photo section.
         await tester.tap(find.byKey(const ValueKey('toggle-image-section')));
         await tester.pumpAndSettle();
-        expect(find.text('Photo search method'), findsOneWidget);
+        expect(find.text('Keresési mód'), findsOneWidget);
       },
     );
 
@@ -776,8 +780,8 @@ void main() {
         };
 
         await tester.pumpWidget(
-          MaterialApp(
-            home: InventoryListScreen(
+          _themed(
+            InventoryListScreen(
               searchGateway: gateway,
               checkMissingEmbeddings: false,
             ),
@@ -788,30 +792,24 @@ void main() {
         final scrollRect = tester.getRect(find.byType(CustomScrollView));
         expect(scrollRect.bottom, closeTo(932.0, 1.0));
         expect(scrollRect.height, greaterThan(800.0));
-        expect(find.text('Search filters'), findsOneWidget);
+        expect(find.text('Szűrők'), findsOneWidget);
 
-        // Scrolling down folds up the unextended top bar out of the viewport.
         await tester.drag(
           find.byType(CustomScrollView),
           const Offset(0, -400),
         );
         await tester.pumpAndSettle();
-        expect(find.text('Search filters'), findsNothing);
+        expect(find.text('Szűrők'), findsNothing);
 
-        // Scrolling back up restores the top bar.
-        await tester.drag(
-          find.byType(CustomScrollView),
-          const Offset(0, 400),
-        );
+        await tester.drag(find.byType(CustomScrollView), const Offset(0, 400));
         await tester.pumpAndSettle();
-        expect(find.text('Search filters'), findsOneWidget);
+        expect(find.text('Szűrők'), findsOneWidget);
 
-        // Expanding filters pins the top bar so it stays visible while scrolling.
-        await tester.tap(find.text('Edit'));
+        await tester.tap(find.text('Szűrés'));
         await tester.pumpAndSettle();
         await tester.drag(find.byType(GridView), const Offset(0, -300));
         await tester.pumpAndSettle();
-        expect(find.text('Search filters'), findsOneWidget);
+        expect(find.text('Szűrők'), findsOneWidget);
       },
     );
   });

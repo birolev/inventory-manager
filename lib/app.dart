@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'screens/login_screen.dart';
 import 'screens/invite_password_screen.dart';
-import 'screens/sales_screen.dart';
+import 'screens/login_screen.dart';
+import 'screens/main_shell.dart';
+import 'theme/app_theme.dart';
 
 class YoaronApp extends StatefulWidget {
   const YoaronApp({super.key, this.openedFromInvite = false});
@@ -19,16 +20,10 @@ class _YoaronAppState extends State<YoaronApp> {
 
   @override
   Widget build(BuildContext context) {
-    // print("YOARON BUILD2");
     return MaterialApp(
-      title: 'Inventory Manager',
+      title: 'Yoaron Készlet',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
-
-      // --- THE AUTH GATE ---
+      theme: AppTheme.light(),
       home: StreamBuilder<AuthState>(
         stream: Supabase.instance.client.auth.onAuthStateChange,
         builder: (context, snapshot) {
@@ -44,12 +39,9 @@ class _YoaronAppState extends State<YoaronApp> {
                 },
               );
             }
-            // Sales logging is the primary screen after sign-in.
-            return const SalesScreen();
-          } else {
-            // Logged OUT -> Force them to the login screen
-            return const LoginScreen();
+            return const MainShell();
           }
+          return const LoginScreen();
         },
       ),
     );
