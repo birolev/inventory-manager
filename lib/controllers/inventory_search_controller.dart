@@ -165,16 +165,16 @@ class InventorySearchController extends ChangeNotifier {
 
   String get activeFiltersSummary {
     return <String>[
-      _selectedCategory == 'Minden' ? 'all categories' : _selectedCategory,
-      _selectedGender == 'Minden' ? 'all genders' : _selectedGender,
-      if (_sizeFilter.trim().isNotEmpty) 'size ${_sizeFilter.trim()}',
-      if (_selectedLocation != 'All locations') 'location $_selectedLocation',
-      if (_colorFilter.trim().isNotEmpty) 'color ${_colorFilter.trim()}',
-      if (_patternFilter.trim().isNotEmpty) 'pattern ${_patternFilter.trim()}',
-      if (_nameFilter.trim().isNotEmpty) 'name ${_nameFilter.trim()}',
-      if (_brandFilter.trim().isNotEmpty) 'brand ${_brandFilter.trim()}',
+      _selectedCategory == 'Minden' ? 'minden kategória' : _selectedCategory,
+      _selectedGender == 'Minden' ? 'minden nem' : _selectedGender,
+      if (_sizeFilter.trim().isNotEmpty) 'méret: ${_sizeFilter.trim()}',
+      if (_selectedLocation != 'All locations') 'üzlet: $_selectedLocation',
+      if (_colorFilter.trim().isNotEmpty) 'szín: ${_colorFilter.trim()}',
+      if (_patternFilter.trim().isNotEmpty) 'minta: ${_patternFilter.trim()}',
+      if (_nameFilter.trim().isNotEmpty) 'név: ${_nameFilter.trim()}',
+      if (_brandFilter.trim().isNotEmpty) 'márka: ${_brandFilter.trim()}',
       if (_conditionFilter.trim().isNotEmpty)
-        'condition ${_conditionFilter.trim()}',
+        'állapot: ${_conditionFilter.trim()}',
     ].join(' · ');
   }
 

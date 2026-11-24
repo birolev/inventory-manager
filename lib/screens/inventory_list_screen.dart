@@ -7,10 +7,9 @@ import 'package:yoaron_app/widgets/cached_remote_image.dart';
 import '../controllers/inventory_search_controller.dart';
 import '../services/image_inventory_search.dart';
 import '../services/inventory_search.dart';
+import '../theme/app_theme.dart';
 import '../widgets/inventory_search_view.dart';
 import '../widgets/safe_bottom_sheet.dart';
-import 'inventory_intake_screen.dart';
-import 'sales_dashboard_screen.dart';
 import 'sales_screen.dart';
 
 class InventoryListScreen extends StatefulWidget {
@@ -18,10 +17,12 @@ class InventoryListScreen extends StatefulWidget {
     super.key,
     this.searchGateway = const SupabaseInventorySearchGateway(),
     this.checkMissingEmbeddings = true,
+    this.onOpenAccount,
   });
 
   final InventorySearchGateway searchGateway;
   final bool checkMissingEmbeddings;
+  final VoidCallback? onOpenAccount;
 
   @override
   State<InventoryListScreen> createState() => _InventoryListScreenState();
@@ -73,23 +74,6 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
         _backfillImageEmbeddings();
       case 'duplicates':
         _checkPossibleDuplicates();
-      case 'intake':
-        Navigator.push<void>(
-          context,
-          MaterialPageRoute(builder: (_) => const InventoryScreen()),
-        );
-      case 'dashboard':
-        Navigator.push<void>(
-          context,
-          MaterialPageRoute(builder: (_) => const SalesDashboardScreen()),
-        );
-      case 'sale':
-        Navigator.push<bool>(
-          context,
-          MaterialPageRoute(builder: (_) => const SalesScreen()),
-        ).then((recorded) {
-          if (recorded == true && mounted) _refreshCurrentInventoryView();
-        });
     }
   }
 
@@ -132,9 +116,12 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       await _searchController.setImage(SearchImageInput.fromXFile(photo));
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Photo search failed: $error')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Fotós keresési hiba: $error'),
+            backgroundColor: AppColors.brick,
+          ),
+        );
       }
     }
   }
@@ -152,29 +139,29 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       if (result.total == 0) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No inventory photos are missing embeddings.'),
+            content: Text('Minden termékfotóhoz létezik már keresési vektor.'),
           ),
         );
       } else {
         final errorSummary = result.errors.take(5).join('\n\n');
         final moreErrors = result.errors.length > 5
-            ? '\n\n…and ${result.errors.length - 5} more errors.'
+            ? '\n\n…és további ${result.errors.length - 5} hiba.'
             : '';
         await showDialog<void>(
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: Text(
               result.stoppedEarly
-                  ? 'Embedding backfill paused'
-                  : 'Embedding backfill complete',
+                  ? 'Vektorgenerálás szüneteltetve'
+                  : 'Vektorgenerálás kész',
             ),
             content: SizedBox(
               width: double.maxFinite,
               child: SingleChildScrollView(
                 child: SelectableText(
-                  'Updated ${result.updated} of ${result.total} photos. '
-                  '${result.failed} failed; attempted ${result.attempted}.'
-                  '${result.stoppedEarly ? '\n\nStopped after 3 consecutive errors. Remaining photos were left untouched.' : ''}'
+                  '${result.updated} / ${result.total} fotó frissítve. '
+                  '${result.failed} sikertelen; feldolgozva: ${result.attempted}.'
+                  '${result.stoppedEarly ? '\n\n3 egymást követő hiba után leállítva. A többi fotó változatlan maradt.' : ''}'
                   '${errorSummary.isEmpty ? '' : '\n\n$errorSummary$moreErrors'}',
                 ),
               ),
@@ -182,7 +169,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Close'),
+                child: const Text('Bezárás'),
               ),
             ],
           ),
@@ -192,7 +179,10 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Embedding backfill failed: $error')),
+          SnackBar(
+            content: Text('Vektorgenerálás sikertelen: $error'),
+            backgroundColor: AppColors.brick,
+          ),
         );
       }
     } finally {
@@ -234,7 +224,10 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not check duplicates: $error')),
+          SnackBar(
+            content: Text('Nem sikerült ellenőrizni a duplikátumokat: $error'),
+            backgroundColor: AppColors.brick,
+          ),
         );
       }
     } finally {
@@ -287,13 +280,16 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       _applyDuplicateFilter();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('This pair will be hidden from duplicate results.'),
+          content: Text('Ez a pár a jövőben el lesz rejtve a duplikátumokból.'),
         ),
       );
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not exclude this pair: $error')),
+          SnackBar(
+            content: Text('Nem sikerült kizárni a párt: $error'),
+            backgroundColor: AppColors.brick,
+          ),
         );
       }
     }
@@ -305,20 +301,21 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     final similarity =
         ((pair['description_similarity'] as num?)?.toDouble() ?? 0) * 100;
     return Card(
-      margin: const EdgeInsets.fromLTRB(10, 5, 10, 8),
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           ListTile(
             dense: true,
-            title: Text('Possible match ${index + 1}'),
-            subtitle: Text(
-              '${similarity.toStringAsFixed(0)}% description match',
+            title: Text(
+              'Lehetséges egyezés #${index + 1}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
             ),
+            subtitle: Text('${similarity.toStringAsFixed(0)}% leírás-egyezés'),
             trailing: TextButton.icon(
               onPressed: () => _ignoreDuplicatePair(pair),
               icon: const Icon(Icons.not_interested, size: 18),
-              label: const Text('Not a duplicate'),
+              label: const Text('Nem duplikátum'),
             ),
           ),
           const Divider(height: 1),
@@ -338,7 +335,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
               item['brand'],
               item['category'],
               item['color'],
-              '${item['price_est'] ?? '-'} Ft',
+              AppFormat.forint(item['price_est']),
               item['location'],
             ]
             .where(
@@ -348,30 +345,41 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     return ListTile(
       onTap: () => _showEditSheet(item),
       leading: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
         child: SizedBox(
           width: 56,
           height: 56,
           child: imageUrl.isEmpty
               ? const ColoredBox(
-                  color: Color(0xFFECEFF1),
-                  child: Icon(Icons.image_not_supported, color: Colors.grey),
+                  color: AppColors.surfaceMuted,
+                  child: Icon(
+                    Icons.checkroom_outlined,
+                    color: AppColors.inkMuted,
+                  ),
                 )
               : CachedRemoteImage(imageUrl, fit: BoxFit.cover, thumbnail: true),
         ),
       ),
       title: Text(
-        item['name']?.toString() ?? 'Unknown item',
+        item['name']?.toString() ?? 'Ismeretlen termék',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w600),
       ),
       subtitle: Text(details, maxLines: 2, overflow: TextOverflow.ellipsis),
-      trailing: Text(
-        isSold ? 'SOLD' : 'AVAILABLE',
-        style: TextStyle(
-          color: isSold ? Colors.red.shade700 : Colors.green.shade700,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: isSold ? AppColors.brickSoft : AppColors.oliveSoft,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          isSold ? 'ELADVA' : 'ELÉRHETŐ',
+          style: TextStyle(
+            color: isSold ? AppColors.brick : AppColors.olive,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
     );
@@ -392,6 +400,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     String name,
     String brand,
     double price,
+    String size,
     String category,
     String gender,
     String location,
@@ -403,6 +412,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
           'name': name,
           'brand': brand,
           'price_est': price,
+          'size': size,
           'category': category,
           'gender': gender,
           'location': location,
@@ -423,22 +433,17 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
         await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Törlés (Delete)'),
-            content: const Text('Biztosan törlöd ezt a terméket?'),
+            title: const Text('Termék törlése'),
+            content: const Text('Biztosan törlöd ezt a terméket a készletből?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
                 child: const Text('Mégse'),
               ),
-              TextButton(
+              FilledButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text(
-                  'Törlés',
-                  style: TextStyle(
-                    color: Colors.red,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                style: FilledButton.styleFrom(backgroundColor: AppColors.brick),
+                child: const Text('Törlés'),
               ),
             ],
           ),
@@ -463,15 +468,15 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Termék törölve! (Deleted)'),
-            backgroundColor: Colors.red,
+            content: Text('Termék törölve.'),
+            backgroundColor: AppColors.brick,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Hiba: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Hiba: $e'), backgroundColor: AppColors.brick),
         );
       }
     }
@@ -512,16 +517,17 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
         builder: (context, setSheetState) {
           return Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (imageUrl != null && imageUrl.isNotEmpty) ...[
                 GestureDetector(
                   onTap: () => _showFullImage(imageUrl),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                     child: Container(
-                      height: 300,
+                      height: 260,
                       width: double.infinity,
-                      color: Colors.black12,
+                      color: AppColors.surfaceMuted,
                       child: CachedRemoteImage(
                         imageUrl,
                         fit: BoxFit.contain,
@@ -532,9 +538,9 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                         errorBuilder: (context, error, stackTrace) =>
                             const Center(
                               child: Icon(
-                                Icons.broken_image,
+                                Icons.broken_image_outlined,
                                 size: 48,
-                                color: Colors.grey,
+                                color: AppColors.inkMuted,
                               ),
                             ),
                       ),
@@ -543,62 +549,64 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                 ),
                 const SizedBox(height: 16),
               ],
-              const Text(
-                'Termék Szerkesztése',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              Text(
+                'Termék szerkesztése',
+                style: Theme.of(context).textTheme.titleLarge,
               ),
-              const SizedBox(height: 15),
-              SwitchListTile(
-                title: const Text(
-                  'Eladva (Mark as Sold)',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+              const SizedBox(height: 10),
+              Card(
+                color: itemIsSold ? AppColors.brickSoft : AppColors.oliveSoft,
+                child: SwitchListTile(
+                  title: Text(
+                    itemIsSold ? 'Eladva' : 'Elérhető készleten',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: itemIsSold ? AppColors.brick : AppColors.olive,
+                    ),
+                  ),
+                  activeThumbColor: AppColors.brick,
+                  value: itemIsSold,
+                  onChanged: (bool val) {
+                    setSheetState(() => itemIsSold = val);
+                  },
                 ),
-                activeThumbColor: Colors.green,
-                value: itemIsSold,
-                onChanged: (bool val) {
-                  setSheetState(() => itemIsSold = val);
-                },
               ),
-              const Divider(),
+              const SizedBox(height: 14),
               TextField(
                 controller: nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Név',
-                  border: OutlineInputBorder(),
-                ),
+                decoration: const InputDecoration(labelText: 'Név'),
               ),
               const SizedBox(height: 10),
               TextField(
                 controller: brandCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Márka',
-                  border: OutlineInputBorder(),
-                ),
+                decoration: const InputDecoration(labelText: 'Márka'),
               ),
               const SizedBox(height: 10),
-              TextField(
-                controller: priceCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Ár (Ft)',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: sizeCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Méret',
-                  border: OutlineInputBorder(),
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: priceCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Ár',
+                        suffixText: 'Ft',
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: sizeCtrl,
+                      decoration: const InputDecoration(labelText: 'Méret'),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 initialValue: selectedCat,
-                decoration: const InputDecoration(
-                  labelText: 'Kategória',
-                  border: OutlineInputBorder(),
-                ),
+                decoration: const InputDecoration(labelText: 'Kategória'),
                 items: editCategories
                     .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                     .toList(),
@@ -607,63 +615,69 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                 },
               ),
               const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                initialValue: selectedGender,
-                decoration: const InputDecoration(
-                  labelText: 'Nem / Gender',
-                  border: OutlineInputBorder(),
-                ),
-                items: genderOptions
-                    .map(
-                      (gender) =>
-                          DropdownMenuItem(value: gender, child: Text(gender)),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setSheetState(() => selectedGender = value);
-                  }
-                },
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: selectedGender,
+                      decoration: const InputDecoration(labelText: 'Nem'),
+                      items: genderOptions
+                          .map(
+                            (gender) => DropdownMenuItem(
+                              value: gender,
+                              child: Text(gender),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setSheetState(() => selectedGender = value);
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: selectedLocation,
+                      decoration: const InputDecoration(labelText: 'Üzlet'),
+                      items: _locations
+                          .map(
+                            (location) => DropdownMenuItem(
+                              value: location,
+                              child: Text(location),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setSheetState(() => selectedLocation = value);
+                        }
+                      },
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                initialValue: selectedLocation,
-                decoration: const InputDecoration(
-                  labelText: 'Store location',
-                  border: OutlineInputBorder(),
-                ),
-                items: _locations
-                    .map(
-                      (location) => DropdownMenuItem(
-                        value: location,
-                        child: Text(location),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setSheetState(() => selectedLocation = value);
-                  }
-                },
-              ),
-              const SizedBox(height: 25),
+              const SizedBox(height: 22),
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: () => _deleteItem(item['id']),
-                      icon: const Icon(Icons.delete, color: Colors.red),
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        color: AppColors.brick,
+                      ),
                       label: const Text(
                         'Törlés',
-                        style: TextStyle(color: Colors.red),
+                        style: TextStyle(color: AppColors.brick),
                       ),
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.red),
-                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        side: const BorderSide(color: AppColors.brick),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 15),
+                  const SizedBox(width: 12),
                   Expanded(
                     flex: 2,
                     child: FilledButton.icon(
@@ -673,17 +687,17 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                           nameCtrl.text,
                           brandCtrl.text,
                           double.tryParse(priceCtrl.text) ?? 0.0,
+                          sizeCtrl.text,
                           selectedCat,
                           selectedGender,
                           selectedLocation,
                           itemIsSold,
                         );
                       },
-                      icon: const Icon(Icons.save),
+                      icon: const Icon(Icons.save_outlined),
                       label: const Text('Mentés'),
                       style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 15),
-                        backgroundColor: Colors.green[700],
+                        backgroundColor: AppColors.olive,
                       ),
                     ),
                   ),
@@ -701,24 +715,46 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     showDialog<void>(
       context: context,
       builder: (dialogContext) => Dialog(
-        child: SizedBox(
-          width: MediaQuery.sizeOf(dialogContext).width * 0.9,
-          height: MediaQuery.sizeOf(dialogContext).height * 0.8,
-          child: InteractiveViewer(
-            minScale: 0.5,
-            maxScale: 4,
-            child: CachedRemoteImage(
-              imageUrl,
-              fit: BoxFit.contain,
-              cacheWidth: null,
-              loadingBuilder: (context, child, progress) => progress == null
-                  ? child
-                  : const Center(child: CircularProgressIndicator()),
-              errorBuilder: (context, error, stackTrace) => const Center(
-                child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            SizedBox(
+              width: MediaQuery.sizeOf(dialogContext).width * 0.9,
+              height: MediaQuery.sizeOf(dialogContext).height * 0.8,
+              child: ColoredBox(
+                color: AppColors.ink,
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4,
+                  child: CachedRemoteImage(
+                    imageUrl,
+                    fit: BoxFit.contain,
+                    cacheWidth: null,
+                    loadingBuilder: (context, child, progress) =>
+                        progress == null
+                        ? child
+                        : const Center(child: CircularProgressIndicator()),
+                    errorBuilder: (context, error, stackTrace) => const Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        size: 48,
+                        color: Colors.white54,
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
+            Positioned(
+              top: 10,
+              right: 10,
+              child: IconButton.filledTonal(
+                tooltip: 'Bezárás',
+                onPressed: () => Navigator.pop(dialogContext),
+                icon: const Icon(Icons.close),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -729,19 +765,17 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
           child: Text(
-            'Possible duplicate pairs · ${_visibleDuplicatePairs.length}',
-            style: Theme.of(
-              context,
-            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            'Lehetséges duplikátumok · ${_visibleDuplicatePairs.length} pár',
+            style: Theme.of(context).textTheme.titleSmall,
           ),
         ),
         const Padding(
-          padding: EdgeInsets.fromLTRB(16, 0, 16, 6),
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Text(
-            'Matches require the same brand, exact price, category, and color family, plus a similar description.',
-            style: TextStyle(fontSize: 12, color: Colors.blueGrey),
+            'Az egyezések azonos márkát, árat, kategóriát, színcsaládot és hasonló leírást igényelnek.',
+            style: TextStyle(fontSize: 12, color: AppColors.inkMuted),
           ),
         ),
         Padding(
@@ -750,7 +784,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
             spacing: 8,
             children: [
               FilterChip(
-                label: const Text('All possible duplicates'),
+                label: const Text('Összes duplikátum'),
                 selected: !_soldAndAvailableOnly,
                 onSelected: (selected) {
                   if (!selected) return;
@@ -759,7 +793,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                 },
               ),
               FilterChip(
-                label: const Text('Sold item + unsold copy'),
+                label: const Text('Eladott + elérhető pár'),
                 selected: _soldAndAvailableOnly,
                 onSelected: (selected) {
                   setState(() => _soldAndAvailableOnly = selected);
@@ -775,8 +809,8 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
               : _visibleDuplicatePairs.isEmpty
               ? const Center(
                   child: Text(
-                    'No likely duplicates found.',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
+                    'Nem található valószínű duplikátum.',
+                    style: TextStyle(fontSize: 16, color: AppColors.inkMuted),
                   ),
                 )
               : ListView.separated(
@@ -797,28 +831,27 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Készlet (Inventory)'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        title: Text(_showingDuplicates ? 'Duplikátumok' : 'Készlet'),
         actions: [
           PopupMenuButton<ImageSource>(
-            tooltip: 'Search by photo',
+            tooltip: 'Keresés fotóval',
             icon: const Icon(Icons.image_search),
             onSelected: _searchByPhoto,
             itemBuilder: (context) => const [
               PopupMenuItem(
                 value: ImageSource.gallery,
-                child: Text('Choose photo'),
+                child: Text('Fotó kiválasztása'),
               ),
               PopupMenuItem(
                 value: ImageSource.camera,
-                child: Text('Take photo'),
+                child: Text('Fotózás kamerával'),
               ),
             ],
           ),
           PopupMenuButton<String>(
             tooltip: _isBackfillingEmbeddings
-                ? 'Generating vectors ${_embeddingProgress ?? ''}'
-                : 'More inventory actions',
+                ? 'Vektorok generálása ${_embeddingProgress ?? ''}'
+                : 'Készlet eszközök',
             icon: _isBackfillingEmbeddings
                 ? const SizedBox(
                     width: 22,
@@ -836,8 +869,8 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   enabled: !_isBackfillingEmbeddings,
                   child: Text(
                     _isBackfillingEmbeddings
-                        ? 'Generating vectors ${_embeddingProgress ?? ''}…'
-                        : 'Generate vectors for all items',
+                        ? 'Vektorok generálása ${_embeddingProgress ?? ''}…'
+                        : 'Hiányzó vektorok generálása',
                   ),
                 ),
               PopupMenuItem(
@@ -845,36 +878,31 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                 enabled: !_isCheckingDuplicates,
                 child: Text(
                   _showingDuplicates
-                      ? 'Show all inventory'
-                      : 'Check possible duplicates',
+                      ? 'Teljes készlet mutatása'
+                      : 'Duplikátumok ellenőrzése',
                 ),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: 'intake',
-                child: Text('Add inventory items'),
-              ),
-              const PopupMenuItem(value: 'sale', child: Text('Record a sale')),
-              const PopupMenuItem(
-                value: 'dashboard',
-                child: Text('Sales dashboard'),
               ),
             ],
           ),
+          if (widget.onOpenAccount != null)
+            IconButton(
+              tooltip: 'Fiók',
+              onPressed: widget.onOpenAccount,
+              icon: const Icon(Icons.person_outline),
+            ),
         ],
       ),
-      backgroundColor: Colors.grey[100],
       body: _showingDuplicates
           ? _buildDuplicatesBody()
           : InventorySearchView(
               key: const ValueKey('inventory-list-search'),
               controller: _searchController,
               initiallyExpanded: false,
-              emptyMessage: 'Nincs találat (No items found)',
+              emptyMessage: 'Nem található termék a megadott szűrőkkel.',
               imageActions: TextButton.icon(
                 onPressed: () => _searchController.clearImage(),
                 icon: const Icon(Icons.close, size: 18),
-                label: const Text('Clear photo'),
+                label: const Text('Fotó törlése'),
                 style: TextButton.styleFrom(
                   padding: EdgeInsets.zero,
                   minimumSize: Size.zero,
@@ -887,23 +915,24 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   return Align(
                     alignment: Alignment.topRight,
                     child: Padding(
-                      padding: const EdgeInsets.all(6),
+                      padding: const EdgeInsets.all(8),
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: Colors.red.shade700,
+                          color: AppColors.brick,
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: const Padding(
                           padding: EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
+                            horizontal: 7,
+                            vertical: 3,
                           ),
                           child: Text(
-                            'SOLD',
+                            'ELADVA',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 10,
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
                             ),
                           ),
                         ),
@@ -914,14 +943,18 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                 return Align(
                   alignment: Alignment.topRight,
                   child: Padding(
-                    padding: const EdgeInsets.all(4),
+                    padding: const EdgeInsets.all(6),
                     child: Material(
-                      color: Colors.white.withValues(alpha: 0.9),
+                      color: AppColors.surface.withValues(alpha: 0.92),
                       shape: const CircleBorder(),
                       child: IconButton(
                         visualDensity: VisualDensity.compact,
-                        tooltip: 'Add to sale',
-                        icon: const Icon(Icons.add_shopping_cart),
+                        tooltip: 'Eladáshoz adás',
+                        icon: const Icon(
+                          Icons.add_shopping_cart,
+                          size: 19,
+                          color: AppColors.ink,
+                        ),
                         onPressed: () => _addToSale(item),
                       ),
                     ),

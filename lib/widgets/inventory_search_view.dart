@@ -8,13 +8,10 @@ import 'package:yoaron_app/widgets/cached_remote_image.dart';
 import '../controllers/inventory_search_controller.dart';
 import '../services/image_inventory_search.dart';
 import '../services/inventory_search.dart';
+import '../theme/app_theme.dart';
 
-/// Canonical, reusable category- and image-based inventory search interface.
-///
-/// Matches the sales-logging post-analysis layout across every search screen.
-/// When [controller.hasImage] is false (manual searches), the uploaded image
-/// and photo search method sections are omitted while keeping all filters,
-/// sorting controls, and result cards identical.
+/// Canonical, reusable category- and image-based inventory search interface
+/// styled in the Boutique Atelier design language.
 class InventorySearchView extends StatefulWidget {
   const InventorySearchView({
     super.key,
@@ -22,13 +19,13 @@ class InventorySearchView extends StatefulWidget {
     this.topBanner,
     this.imageActions,
     this.initiallyExpanded = true,
-    this.emptyMessage = 'No unsold inventory items found.',
+    this.emptyMessage = 'Nem található eladatlan termék.',
     this.isItemSelected,
     this.isItemDisabled,
     this.itemOverlayBuilder,
     this.onItemTap,
     this.bottomBar,
-    this.maxFilterPanelHeight = 390,
+    this.maxFilterPanelHeight = 400,
   });
 
   final InventorySearchController controller;
@@ -152,12 +149,11 @@ class _InventorySearchViewState extends State<InventorySearchView> {
       decoration: InputDecoration(
         labelText: label,
         hintText: hintText,
-        prefixIcon: prefixIcon == null ? null : Icon(prefixIcon),
-        border: const OutlineInputBorder(),
+        prefixIcon: prefixIcon == null ? null : Icon(prefixIcon, size: 20),
         isDense: true,
         suffixIcon: IconButton(
-          tooltip: 'Apply $label filter',
-          icon: const Icon(Icons.search),
+          tooltip: '$label szűrés alkalmazása',
+          icon: const Icon(Icons.search, size: 20),
           onPressed: controller.isLoading
               ? null
               : controller.applyFiltersAndSearch,
@@ -171,22 +167,26 @@ class _InventorySearchViewState extends State<InventorySearchView> {
       context: context,
       builder: (dialogContext) => Dialog(
         insetPadding: const EdgeInsets.all(16),
+        clipBehavior: Clip.antiAlias,
         child: Stack(
           children: [
             SizedBox(
               width: MediaQuery.sizeOf(dialogContext).width * 0.9,
               height: MediaQuery.sizeOf(dialogContext).height * 0.8,
-              child: InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 4,
-                child: Image.memory(bytes, fit: BoxFit.contain),
+              child: ColoredBox(
+                color: AppColors.ink,
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4,
+                  child: Image.memory(bytes, fit: BoxFit.contain),
+                ),
               ),
             ),
             Positioned(
-              top: 8,
-              right: 8,
+              top: 10,
+              right: 10,
               child: IconButton.filledTonal(
-                tooltip: 'Close',
+                tooltip: 'Bezárás',
                 onPressed: () => Navigator.pop(dialogContext),
                 icon: const Icon(Icons.close),
               ),
@@ -207,18 +207,23 @@ class _InventorySearchViewState extends State<InventorySearchView> {
           children: [
             Expanded(
               child: Text(
-                isGemini ? 'Photo search (Gemini)' : 'Photo search (Vectors)',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                isGemini
+                    ? 'Fotós keresés (Gemini AI)'
+                    : 'Fotós keresés (Vizuális)',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.ink,
+                ),
               ),
             ),
             TextButton.icon(
               key: const ValueKey('toggle-image-section'),
-              onPressed: () =>
-                  setState(() => _imageExpanded = !_imageExpanded),
+              onPressed: () => setState(() => _imageExpanded = !_imageExpanded),
               icon: Icon(
                 _imageExpanded ? Icons.expand_less : Icons.image_outlined,
+                size: 18,
               ),
-              label: Text(_imageExpanded ? 'Hide' : 'Show'),
+              label: Text(_imageExpanded ? 'Elrejtés' : 'Mutat'),
             ),
           ],
         ),
@@ -231,11 +236,11 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                   child: Stack(
                     children: [
                       ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(10),
                         child: Image.memory(
                           bytes,
-                          width: 92,
-                          height: 112,
+                          width: 88,
+                          height: 108,
                           fit: BoxFit.cover,
                         ),
                       ),
@@ -245,13 +250,13 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             color: Colors.black54,
-                            borderRadius: BorderRadius.all(Radius.circular(4)),
+                            borderRadius: BorderRadius.all(Radius.circular(6)),
                           ),
                           child: Padding(
-                            padding: EdgeInsets.all(2),
+                            padding: EdgeInsets.all(3),
                             child: Icon(
                               Icons.zoom_in,
-                              size: 16,
+                              size: 15,
                               color: Colors.white,
                             ),
                           ),
@@ -261,10 +266,14 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                   ),
                 )
               else
-                const SizedBox(
-                  width: 92,
-                  height: 112,
-                  child: Center(child: CircularProgressIndicator()),
+                Container(
+                  width: 88,
+                  height: 108,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceMuted,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Center(child: CircularProgressIndicator()),
                 ),
               const SizedBox(width: 12),
               Expanded(
@@ -274,23 +283,24 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                     if (controller.isLoading)
                       Text(
                         isGemini
-                            ? 'Analyzing photo with Gemini…'
-                            : 'Searching with embedded vectors…',
+                            ? 'Fotó elemzése Gemini-vel…'
+                            : 'Hasonló ruhák keresése…',
+                        style: const TextStyle(color: AppColors.inkMuted),
                       )
                     else if (controller.error != null)
                       Text(
                         controller.error!,
-                        style: const TextStyle(color: Colors.red),
+                        style: const TextStyle(color: AppColors.brick),
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                       )
                     else
                       Text(
                         isGemini
-                            ? 'AI match: ${controller.aiCriteria?['category'] ?? '-'} · '
+                            ? 'AI találat: ${controller.aiCriteria?['category'] ?? '-'} · '
                                   '${controller.aiCriteria?['gender'] ?? '-'} · '
                                   '${controller.aiCriteria?['color'] ?? '-'}'
-                            : 'Embedded vector results',
+                            : 'Vizuális hasonlóság alapján rendezve',
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                     if (widget.imageActions != null) ...[
@@ -302,25 +312,31 @@ class _InventorySearchViewState extends State<InventorySearchView> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           DropdownButtonFormField<ImageSearchMode>(
             key: ValueKey(
               'search-mode-${controller.searchMode.name}-${controller.filterRevision}',
             ),
             initialValue: controller.searchMode,
+            isExpanded: true,
             decoration: const InputDecoration(
-              labelText: 'Photo search method',
-              border: OutlineInputBorder(),
+              labelText: 'Keresési mód',
               isDense: true,
             ),
             items: const [
               DropdownMenuItem(
                 value: ImageSearchMode.embedded,
-                child: Text('Embedded vectors'),
+                child: Text(
+                  'Vizuális keresés (Gyors)',
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               DropdownMenuItem(
                 value: ImageSearchMode.gemini,
-                child: Text('Gemini analysis'),
+                child: Text(
+                  'AI elemzés (Gemini)',
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
             onChanged: (mode) {
@@ -340,15 +356,18 @@ class _InventorySearchViewState extends State<InventorySearchView> {
     final overlay = widget.itemOverlayBuilder?.call(context, item);
     final imageUrl = item['image_url']?.toString();
     final price = item['price_est'];
+    final size = item['size']?.toString().trim() ?? '';
+    final location = item['location']?.toString().trim() ?? '';
+    final brand = item['brand']?.toString().trim() ?? '';
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      color: selected ? Colors.green[50] : null,
+      color: selected ? AppColors.oliveSoft : AppColors.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         side: BorderSide(
-          color: selected ? Colors.green : Colors.transparent,
-          width: 2,
+          color: selected ? AppColors.olive : AppColors.border,
+          width: selected ? 2 : 1,
         ),
       ),
       child: InkWell(
@@ -363,25 +382,49 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                 fit: StackFit.expand,
                 children: [
                   ColoredBox(
-                    color: Colors.black12,
+                    color: AppColors.surfaceMuted,
                     child: imageUrl == null || imageUrl.isEmpty
-                        ? const Icon(Icons.image_not_supported)
+                        ? const Icon(
+                            Icons.checkroom_outlined,
+                            color: AppColors.inkMuted,
+                            size: 32,
+                          )
                         : CachedRemoteImage(
                             imageUrl,
                             fit: BoxFit.cover,
                             thumbnail: true,
                             errorBuilder: (context, error, stackTrace) =>
-                                const Icon(Icons.broken_image),
+                                const Icon(
+                                  Icons.broken_image_outlined,
+                                  color: AppColors.inkMuted,
+                                ),
                           ),
                   ),
+                  if (location.isNotEmpty || size.isNotEmpty)
+                    Positioned(
+                      left: 8,
+                      bottom: 8,
+                      child: Wrap(
+                        spacing: 4,
+                        children: [
+                          if (size.isNotEmpty) _CardPill(text: size),
+                          if (location.isNotEmpty) _CardPill(text: location),
+                        ],
+                      ),
+                    ),
                   if (selected)
                     const Align(
                       alignment: Alignment.topRight,
                       child: Padding(
                         padding: EdgeInsets.all(8),
                         child: CircleAvatar(
-                          backgroundColor: Colors.green,
-                          child: Icon(Icons.check, color: Colors.white),
+                          radius: 15,
+                          backgroundColor: AppColors.olive,
+                          child: Icon(
+                            Icons.check,
+                            color: Colors.white,
+                            size: 18,
+                          ),
                         ),
                       ),
                     ),
@@ -390,32 +433,52 @@ class _InventorySearchViewState extends State<InventorySearchView> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (brand.isNotEmpty)
+                    Text(
+                      brand.toUpperCase(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        letterSpacing: 0.6,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
                   Text(
-                    item['brand']?.toString() ?? '',
+                    item['name']?.toString() ?? 'Ismeretlen termék',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.blueGrey,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: AppColors.ink,
                     ),
                   ),
-                  Text(
-                    item['name']?.toString() ?? 'Unknown item',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
+                  const SizedBox(height: 2),
                   Text(
                     '${item['category'] ?? '-'} · ${item['gender'] ?? '-'}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.inkMuted,
+                    ),
                   ),
-                  Text('${price ?? 0} Ft'),
+                  const SizedBox(height: 4),
+                  Text(
+                    AppFormat.forint(price),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: AppColors.ink,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -465,232 +528,277 @@ class _InventorySearchViewState extends State<InventorySearchView> {
             !controller.isLoading &&
             controller.error == null &&
             controller.results.isNotEmpty;
-        final foldHeaderOnScroll = hasScrollableResults && !isAnySectionExpanded;
+        final foldHeaderOnScroll =
+            hasScrollableResults && !isAnySectionExpanded;
 
-        final topPanelContent = Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (widget.topBanner != null) ...[
-                widget.topBanner!,
-                const SizedBox(height: 10),
-              ],
-              if (controller.hasImage) _buildImageSection(controller),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Search filters',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  if (controller.hasActiveFilters)
-                    TextButton(
-                      onPressed: controller.isLoading
-                          ? null
-                          : () => controller.resetFilters(),
-                      child: const Text('Reset'),
-                    ),
-                  TextButton.icon(
-                    onPressed: () =>
-                        setState(() => _filtersExpanded = !_filtersExpanded),
-                    icon: Icon(
-                      _filtersExpanded ? Icons.expand_less : Icons.tune,
-                    ),
-                    label: Text(_filtersExpanded ? 'Hide' : 'Edit'),
-                  ),
+        final crossAxisCount = constraints.maxWidth >= 1000
+            ? 4
+            : constraints.maxWidth >= 680
+            ? 3
+            : 2;
+        final gridDelegate = SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          childAspectRatio: 0.64,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+        );
+
+        final topPanelContent = DecoratedBox(
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            border: Border(bottom: BorderSide(color: AppColors.border)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (widget.topBanner != null) ...[
+                  widget.topBanner!,
+                  const SizedBox(height: 8),
                 ],
-              ),
-              if (_filtersExpanded) ...[
-                DropdownButtonFormField<String>(
-                  key: ValueKey(
-                    'cat-${controller.selectedCategory}-${controller.filterRevision}',
-                  ),
-                  initialValue: controller.selectedCategory,
-                  decoration: InputDecoration(
-                    labelText: isGeminiImage
-                        ? 'Search category (change AI result)'
-                        : 'Search category',
-                    prefixIcon: const Icon(Icons.category),
-                    border: const OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: categoryItems
-                      .map(
-                        (category) => DropdownMenuItem(
-                          value: category,
-                          child: Text(category),
+                if (controller.hasImage) _buildImageSection(controller),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Szűrők',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.ink,
                         ),
-                      )
-                      .toList(),
-                  onChanged: controller.isLoading
-                      ? null
-                      : (category) {
-                          if (category == null) return;
-                          controller.setCategory(category);
-                        },
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  key: ValueKey(
-                    'gender-${controller.selectedGender}-${controller.filterRevision}',
-                  ),
-                  initialValue: controller.selectedGender,
-                  decoration: InputDecoration(
-                    labelText: isGeminiImage
-                        ? 'Search gender (change AI result)'
-                        : 'Search gender',
-                    prefixIcon: const Icon(Icons.people),
-                    border: const OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: genderItems
-                      .map(
-                        (gender) => DropdownMenuItem(
-                          value: gender,
-                          child: Text(gender),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: controller.isLoading
-                      ? null
-                      : (gender) {
-                          if (gender == null) return;
-                          controller.setGender(gender);
-                        },
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  key: ValueKey(
-                    'loc-${controller.selectedLocation}-${controller.filterRevision}',
-                  ),
-                  initialValue: controller.selectedLocation,
-                  decoration: const InputDecoration(
-                    labelText: 'Inventory location',
-                    prefixIcon: Icon(Icons.store),
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: locationItems
-                      .map(
-                        (location) => DropdownMenuItem(
-                          value: location,
-                          child: Text(location),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: controller.isLoading
-                      ? null
-                      : (location) {
-                          if (location == null) return;
-                          controller.setLocation(location);
-                        },
-                ),
-                const SizedBox(height: 8),
-                _responsivePair(
-                  _buildFilterTextField(
-                    textController: _sizeController,
-                    label: 'Size',
-                    hintText: 'M, 32, 42',
-                    prefixIcon: Icons.straighten,
-                    onChanged: controller.setSizeFilter,
-                  ),
-                  _buildFilterTextField(
-                    textController: _colorController,
-                    label: 'Color',
-                    onChanged: controller.setColorFilter,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                _responsivePair(
-                  _buildFilterTextField(
-                    textController: _patternController,
-                    label: 'Pattern',
-                    onChanged: controller.setPatternFilter,
-                  ),
-                  DropdownButtonFormField<InventorySortOption>(
-                    key: ValueKey(
-                      'sort-${currentSort.name}-${controller.searchMode.name}-${controller.filterRevision}',
+                      ),
                     ),
-                    initialValue: currentSort,
-                    decoration: const InputDecoration(
-                      labelText: 'Sort matches',
-                      prefixIcon: Icon(Icons.sort),
-                      border: OutlineInputBorder(),
+                    if (controller.hasActiveFilters)
+                      TextButton(
+                        onPressed: controller.isLoading
+                            ? null
+                            : () => controller.resetFilters(),
+                        child: const Text('Törlés'),
+                      ),
+                    TextButton.icon(
+                      onPressed: () =>
+                          setState(() => _filtersExpanded = !_filtersExpanded),
+                      icon: Icon(
+                        _filtersExpanded ? Icons.expand_less : Icons.tune,
+                        size: 18,
+                      ),
+                      label: Text(_filtersExpanded ? 'Elrejtés' : 'Szűrés'),
+                    ),
+                  ],
+                ),
+                if (_filtersExpanded) ...[
+                  const SizedBox(height: 4),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey(
+                      'cat-${controller.selectedCategory}-${controller.filterRevision}',
+                    ),
+                    initialValue: controller.selectedCategory,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      labelText: isGeminiImage
+                          ? 'Kategória (AI javítás)'
+                          : 'Kategória',
+                      prefixIcon: const Icon(Icons.category_outlined, size: 20),
                       isDense: true,
                     ),
-                    items: sortOptions
+                    items: categoryItems
                         .map(
-                          (option) => DropdownMenuItem(
-                            value: option,
-                            child: Text(option.label),
+                          (category) => DropdownMenuItem(
+                            value: category,
+                            child: Text(
+                              category,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         )
                         .toList(),
                     onChanged: controller.isLoading
                         ? null
-                        : (option) {
-                            if (option == null) return;
-                            controller.setSortOption(option);
+                        : (category) {
+                            if (category == null) return;
+                            controller.setCategory(category);
                           },
                   ),
-                ),
-                ExpansionTile(
-                  tilePadding: EdgeInsets.zero,
-                  title: const Text('More filters: name, brand, condition'),
-                  children: [
-                    _buildFilterTextField(
-                      textController: _nameController,
-                      label: 'Name',
-                      onChanged: controller.setNameFilter,
+                  const SizedBox(height: 8),
+                  _responsivePair(
+                    DropdownButtonFormField<String>(
+                      key: ValueKey(
+                        'gender-${controller.selectedGender}-${controller.filterRevision}',
+                      ),
+                      initialValue: controller.selectedGender,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: isGeminiImage ? 'Nem (AI)' : 'Nem',
+                        prefixIcon: const Icon(Icons.people_outline, size: 20),
+                        isDense: true,
+                      ),
+                      items: genderItems
+                          .map(
+                            (gender) => DropdownMenuItem(
+                              value: gender,
+                              child: Text(
+                                gender,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: controller.isLoading
+                          ? null
+                          : (gender) {
+                              if (gender == null) return;
+                              controller.setGender(gender);
+                            },
                     ),
-                    const SizedBox(height: 8),
-                    _buildFilterTextField(
-                      textController: _brandController,
-                      label: 'Brand',
-                      onChanged: controller.setBrandFilter,
+                    DropdownButtonFormField<String>(
+                      key: ValueKey(
+                        'loc-${controller.selectedLocation}-${controller.filterRevision}',
+                      ),
+                      initialValue: controller.selectedLocation,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Üzlet',
+                        prefixIcon: Icon(Icons.storefront_outlined, size: 20),
+                        isDense: true,
+                      ),
+                      items: locationItems
+                          .map(
+                            (location) => DropdownMenuItem(
+                              value: location,
+                              child: Text(
+                                AppFormat.locationLabel(location),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: controller.isLoading
+                          ? null
+                          : (location) {
+                              if (location == null) return;
+                              controller.setLocation(location);
+                            },
                     ),
-                    const SizedBox(height: 8),
+                  ),
+                  const SizedBox(height: 8),
+                  _responsivePair(
                     _buildFilterTextField(
-                      textController: _conditionController,
-                      label: 'Condition',
-                      onChanged: controller.setConditionFilter,
+                      textController: _sizeController,
+                      label: 'Méret',
+                      hintText: 'pl. M, 32, 42',
+                      prefixIcon: Icons.straighten,
+                      onChanged: controller.setSizeFilter,
                     ),
-                  ],
+                    _buildFilterTextField(
+                      textController: _colorController,
+                      label: 'Szín',
+                      onChanged: controller.setColorFilter,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _responsivePair(
+                    _buildFilterTextField(
+                      textController: _patternController,
+                      label: 'Minta',
+                      onChanged: controller.setPatternFilter,
+                    ),
+                    DropdownButtonFormField<InventorySortOption>(
+                      key: ValueKey(
+                        'sort-${currentSort.name}-${controller.searchMode.name}-${controller.filterRevision}',
+                      ),
+                      initialValue: currentSort,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Rendezés',
+                        prefixIcon: Icon(Icons.sort, size: 20),
+                        isDense: true,
+                      ),
+                      items: sortOptions
+                          .map(
+                            (option) => DropdownMenuItem(
+                              value: option,
+                              child: Text(
+                                option.label,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: controller.isLoading
+                          ? null
+                          : (option) {
+                              if (option == null) return;
+                              controller.setSortOption(option);
+                            },
+                    ),
+                  ),
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    shape: const Border(),
+                    collapsedShape: const Border(),
+                    title: const Text(
+                      'További szűrők: név, márka, állapot',
+                      style: TextStyle(fontSize: 13, color: AppColors.inkMuted),
+                    ),
+                    children: [
+                      _buildFilterTextField(
+                        textController: _nameController,
+                        label: 'Név',
+                        onChanged: controller.setNameFilter,
+                      ),
+                      const SizedBox(height: 8),
+                      _buildFilterTextField(
+                        textController: _brandController,
+                        label: 'Márka',
+                        onChanged: controller.setBrandFilter,
+                      ),
+                      const SizedBox(height: 8),
+                      _buildFilterTextField(
+                        textController: _conditionController,
+                        label: 'Állapot',
+                        onChanged: controller.setConditionFilter,
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+                  ),
+                ],
+                if (!controller.isLoading &&
+                    controller.usedFallback &&
+                    controller.results.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Text(
+                      'A bővített keresés sem talált egyezést (kategória, üzlet és márka alapján).',
+                      style: TextStyle(fontSize: 12, color: AppColors.ochre),
+                    ),
+                  ),
+                if (!controller.isLoading &&
+                    controller.results.isNotEmpty &&
+                    controller.usedFallback)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Text(
+                      'Nincs pontos egyezés — bővített találatok kategória, üzlet és márka alapján.',
+                      style: TextStyle(fontSize: 12, color: AppColors.ochre),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    '${controller.results.length} találat · '
+                    '${controller.activeFiltersSummary} · '
+                    '${currentSort.shortDescription}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
                 ),
               ],
-              if (!controller.isLoading &&
-                  controller.usedFallback &&
-                  controller.results.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: Text(
-                    'No matches found, including the broader search using '
-                    'category, location, and brand.',
-                    style: TextStyle(color: Colors.blueGrey),
-                  ),
-                ),
-              if (!controller.isLoading &&
-                  controller.results.isNotEmpty &&
-                  controller.usedFallback)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: Text(
-                    'No exact matches; showing broader results using category, '
-                    'location, and brand only.',
-                    style: TextStyle(color: Colors.blueGrey),
-                  ),
-                ),
-              Text(
-                '${controller.results.length} items · '
-                'Searching: ${controller.activeFiltersSummary} · '
-                'sorted by ${currentSort.shortDescription}',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, color: Colors.blueGrey),
-              ),
-            ],
+            ),
           ),
         );
 
@@ -711,12 +819,18 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        const Icon(
+                          Icons.error_outline,
+                          size: 40,
+                          color: AppColors.brick,
+                        ),
+                        const SizedBox(height: 10),
                         Text(
                           controller.error!,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.red),
+                          style: const TextStyle(color: AppColors.brick),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 14),
                         FilledButton.tonalIcon(
                           onPressed: controller.hasImage
                               ? controller.analyzeImage
@@ -724,8 +838,8 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                           icon: const Icon(Icons.refresh),
                           label: Text(
                             controller.hasImage
-                                ? 'Retry analysis'
-                                : 'Retry search',
+                                ? 'Elemzés újrapróbálása'
+                                : 'Keresés újrapróbálása',
                           ),
                         ),
                       ],
@@ -734,7 +848,29 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                 ),
               )
             else if (controller.results.isEmpty)
-              Expanded(child: Center(child: Text(widget.emptyMessage)))
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.checkroom_outlined,
+                          size: 44,
+                          color: AppColors.borderStrong,
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          widget.emptyMessage,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: AppColors.inkMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
             else if (foldHeaderOnScroll)
               Expanded(
                 child: CustomScrollView(
@@ -742,19 +878,13 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                     SliverToBoxAdapter(child: topPanelContent),
                     SliverPadding(
                       padding: EdgeInsets.fromLTRB(
+                        12,
                         10,
-                        4,
-                        10,
+                        12,
                         16 + bottomSafeInset,
                       ),
                       sliver: SliverGrid(
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              childAspectRatio: 0.68,
-                              crossAxisSpacing: 10,
-                              mainAxisSpacing: 10,
-                            ),
+                        gridDelegate: gridDelegate,
                         delegate: SliverChildBuilderDelegate(
                           (context, index) =>
                               _buildItemCard(controller.results[index]),
@@ -769,33 +899,59 @@ class _InventorySearchViewState extends State<InventorySearchView> {
               Expanded(
                 child: GridView.builder(
                   padding: EdgeInsets.fromLTRB(
-                    10,
-                    10,
-                    10,
+                    12,
+                    12,
+                    12,
                     16 + bottomSafeInset,
                   ),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    childAspectRatio: 0.68,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                  ),
+                  gridDelegate: gridDelegate,
                   itemCount: controller.results.length,
                   itemBuilder: (context, index) =>
                       _buildItemCard(controller.results[index]),
                 ),
               ),
             if (widget.bottomBar != null)
-              SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                  child: widget.bottomBar!,
+              DecoratedBox(
+                decoration: const BoxDecoration(
+                  color: AppColors.surface,
+                  border: Border(top: BorderSide(color: AppColors.border)),
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                    child: widget.bottomBar!,
+                  ),
                 ),
               ),
           ],
         );
       },
+    );
+  }
+}
+
+class _CardPill extends StatelessWidget {
+  const _CardPill({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.ink.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 }

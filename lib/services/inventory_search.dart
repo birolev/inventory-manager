@@ -10,19 +10,19 @@ enum InventorySortOption {
   priceDesc;
 
   String get label => switch (this) {
-    InventorySortOption.relevance => 'Best visual match',
-    InventorySortOption.newest => 'Newest upload',
-    InventorySortOption.oldest => 'Oldest upload',
-    InventorySortOption.priceAsc => 'Price ascending',
-    InventorySortOption.priceDesc => 'Price descending',
+    InventorySortOption.relevance => 'Legjobb találat',
+    InventorySortOption.newest => 'Legújabb elöl',
+    InventorySortOption.oldest => 'Legrégebbi elöl',
+    InventorySortOption.priceAsc => 'Ár: növekvő',
+    InventorySortOption.priceDesc => 'Ár: csökkenő',
   };
 
   String get shortDescription => switch (this) {
-    InventorySortOption.relevance => 'best visual match',
-    InventorySortOption.newest => 'newest upload',
-    InventorySortOption.oldest => 'oldest upload',
-    InventorySortOption.priceAsc => 'price low to high',
-    InventorySortOption.priceDesc => 'price high to low',
+    InventorySortOption.relevance => 'legjobb találat',
+    InventorySortOption.newest => 'legújabb',
+    InventorySortOption.oldest => 'legrégebbi',
+    InventorySortOption.priceAsc => 'ár növekvő',
+    InventorySortOption.priceDesc => 'ár csökkenő',
   };
 
   String get sortColumn => switch (this) {

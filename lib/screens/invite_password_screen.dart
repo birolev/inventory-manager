@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../theme/app_theme.dart';
+
 class InvitePasswordScreen extends StatefulWidget {
   const InvitePasswordScreen({required this.onPasswordChanged, super.key});
 
@@ -26,11 +28,11 @@ class _InvitePasswordScreenState extends State<InvitePasswordScreen> {
   Future<void> _savePassword() async {
     final password = _passwordController.text;
     if (password.length < 8) {
-      _showMessage('Use a password with at least 8 characters.');
+      _showMessage('A jelszónak legalább 8 karakter hosszúnak kell lennie.');
       return;
     }
     if (password != _confirmationController.text) {
-      _showMessage('The passwords do not match.');
+      _showMessage('A két jelszó nem egyezik.');
       return;
     }
 
@@ -43,7 +45,7 @@ class _InvitePasswordScreenState extends State<InvitePasswordScreen> {
     } on AuthException catch (error) {
       if (mounted) _showMessage(error.message);
     } catch (error) {
-      if (mounted) _showMessage('Could not update password: $error');
+      if (mounted) _showMessage('Nem sikerült frissíteni a jelszót: $error');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -51,23 +53,23 @@ class _InvitePasswordScreenState extends State<InvitePasswordScreen> {
 
   void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+      SnackBar(content: Text(message), backgroundColor: AppColors.brick),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final inputDecoration = InputDecoration(
-      border: const OutlineInputBorder(),
-      suffixIcon: IconButton(
-        tooltip: _obscurePassword ? 'Show password' : 'Hide password',
-        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-        icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
+    final toggleButton = IconButton(
+      tooltip: _obscurePassword ? 'Jelszó megjelenítése' : 'Jelszó elrejtése',
+      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+      icon: Icon(
+        _obscurePassword
+            ? Icons.visibility_outlined
+            : Icons.visibility_off_outlined,
       ),
     );
 
     return Scaffold(
-      backgroundColor: Colors.grey[100],
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -80,52 +82,72 @@ class _InvitePasswordScreenState extends State<InvitePasswordScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Icon(
-                      Icons.lock_reset,
-                      size: 54,
-                      color: Colors.deepPurple,
+                    Center(
+                      child: Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: AppColors.terracottaSoft,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.lock_reset,
+                          size: 28,
+                          color: AppColors.terracotta,
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 18),
                     Text(
-                      'Set your password',
+                      'Jelszó beállítása',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.headlineSmall,
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Choose a password for your invited account to continue.',
+                    const SizedBox(height: 6),
+                    Text(
+                      'Adj meg egy jelszót a meghívott fiókodhoz a folytatáshoz.',
                       textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: 24),
                     TextField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
+                      textInputAction: TextInputAction.next,
                       autofillHints: const [AutofillHints.newPassword],
-                      decoration: inputDecoration.copyWith(
-                        labelText: 'New password',
-                        helperText: 'At least 8 characters',
+                      decoration: InputDecoration(
+                        labelText: 'Új jelszó',
+                        helperText: 'Legalább 8 karakter',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: toggleButton,
                       ),
                     ),
                     const SizedBox(height: 14),
                     TextField(
                       controller: _confirmationController,
                       obscureText: _obscurePassword,
+                      textInputAction: TextInputAction.done,
                       autofillHints: const [AutofillHints.newPassword],
-                      onSubmitted: (_) => _savePassword(),
-                      decoration: inputDecoration.copyWith(
-                        labelText: 'Confirm new password',
+                      onSubmitted: (_) => _isSaving ? null : _savePassword(),
+                      decoration: InputDecoration(
+                        labelText: 'Új jelszó megerősítése',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: toggleButton,
                       ),
                     ),
-                    const SizedBox(height: 22),
+                    const SizedBox(height: 24),
                     FilledButton(
                       onPressed: _isSaving ? null : _savePassword,
                       child: _isSaving
                           ? const SizedBox(
                               width: 20,
                               height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
                             )
-                          : const Text('Save password and continue'),
+                          : const Text('Jelszó mentése és belépés'),
                     ),
                   ],
                 ),
