@@ -1,90 +1,97 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:yoaron_app/constants/categories.dart';
-import 'package:yoaron_app/widgets/cached_remote_image.dart';
-import '../services/inventory_search.dart';
+
+import '../controllers/inventory_search_controller.dart';
 import '../services/image_inventory_search.dart';
+import '../services/inventory_search.dart';
+import '../widgets/inventory_search_view.dart';
+import 'inventory_list_screen.dart';
+import 'sales_dashboard_screen.dart';
 
-class _SalePhoto {
-  _SalePhoto(this.file);
+enum _SalesStage { start, matchingPhoto, manualSearch, addOptions, checkout }
 
-  final XFile file;
-  Uint8List? bytes;
-  Map<String, dynamic>? aiCriteria;
-  List<Map<String, dynamic>> matches = [];
+class _SalePhotoSession {
+  _SalePhotoSession({
+    required this.id,
+    required this.image,
+    required this.controller,
+  });
+
+  final int id;
+  final SearchImageInput image;
+  final InventorySearchController controller;
   Map<String, dynamic>? selectedItem;
-  String? error;
-  bool isAnalyzing = false;
-  bool usedFallback = false;
-  String selectedCategory = 'Minden';
-  String selectedGender = 'Minden';
-  String locationFilter = 'All locations';
-  String sizeFilter = '';
-  String colorFilter = '';
-  String patternFilter = '';
-  String nameFilter = '';
-  String brandFilter = '';
-  String conditionFilter = '';
-  bool colorWasChangedManually = false;
-  bool patternWasChangedManually = false;
-  int filterRevision = 0;
+  bool hasStartedAnalysis = false;
+
+  void dispose() {
+    controller.dispose();
+  }
 }
 
 class SalesScreen extends StatefulWidget {
-  const SalesScreen({super.key, this.initialItems = const []});
+  const SalesScreen({
+    super.key,
+    this.initialItems = const [],
+    this.initialPhotos = const [],
+    this.searchGateway = const SupabaseInventorySearchGateway(),
+    this.onRecordSale,
+  });
 
   final List<Map<String, dynamic>> initialItems;
+  final List<SearchImageInput> initialPhotos;
+  final InventorySearchGateway searchGateway;
+  final Future<void> Function(Map<String, dynamic> params)? onRecordSale;
 
   @override
   State<SalesScreen> createState() => _SalesScreenState();
 }
 
 class _SalesScreenState extends State<SalesScreen> {
-  static const _locations = ['Csengery', 'Astoria'];
+  static const _locations = InventorySearch.storeLocations;
 
   final ImagePicker _picker = ImagePicker();
-  final List<_SalePhoto> _photos = [];
+  final List<_SalePhotoSession> _photos = [];
   final List<Map<String, dynamic>> _selectedItems = [];
   final TextEditingController _discountController = TextEditingController(
     text: '0',
   );
   final TextEditingController _finalPriceController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
-  final TextEditingController _sizeFilterController = TextEditingController();
-  final TextEditingController _manualSearchController = TextEditingController();
   final TextEditingController _customNameController = TextEditingController();
   final TextEditingController _customPriceController = TextEditingController();
-  final List<Map<String, dynamic>> _manualResults = [];
 
+  late final InventorySearchController _manualSearchController;
+
+  _SalesStage _stage = _SalesStage.start;
+  int _nextPhotoSessionId = 1;
   int _currentPhotoIndex = 0;
-  bool _isCheckout = false;
-  bool _showAddOptions = false;
   bool _isSaving = false;
   bool _syncingPrices = false;
-  bool _filtersExpanded = true;
-  bool _isManualSearch = false;
-  bool _isLoadingManualResults = false;
-  String _manualCategory = 'Minden';
-  String _manualGender = 'Minden';
-  String _manualLocation = 'All locations';
-  String _manualSearchText = '';
   String _location = _locations.first;
   String _paymentMethod = 'cash';
-  String _sortOption = 'newest';
-  ImageSearchMode _photoSearchMode = ImageSearchMode.embedded;
+  ImageSearchMode _preferredPhotoSearchMode = ImageSearchMode.embedded;
   DateTime _soldAt = DateTime.now();
 
   @override
   void initState() {
     super.initState();
+    _manualSearchController = InventorySearchController(
+      onlyUnsold: true,
+      allowFallbackOnManualSearch: false,
+      gateway: widget.searchGateway,
+    );
     _selectedItems.addAll(widget.initialItems);
     if (widget.initialItems.isNotEmpty) {
-      _showAddOptions = true;
+      _stage = _SalesStage.addOptions;
       final itemLocation = widget.initialItems.first['location']?.toString();
       if (_locations.contains(itemLocation)) _location = itemLocation!;
+    }
+    if (widget.initialPhotos.isNotEmpty) {
+      _enqueuePhotoInputs(widget.initialPhotos, triggerSetState: false);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startCurrentPhotoAnalysis();
+      });
     }
   }
 
@@ -93,10 +100,7 @@ class _SalesScreenState extends State<SalesScreen> {
     (total, item) => total + _asDouble(item['price_est']),
   );
 
-  double _asDouble(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
-  }
+  double _asDouble(dynamic value) => InventorySearch.parsePrice(value) ?? 0;
 
   String _formatAmount(double amount) => amount == amount.roundToDouble()
       ? amount.toStringAsFixed(0)
@@ -104,16 +108,73 @@ class _SalesScreenState extends State<SalesScreen> {
 
   double _roundCurrency(double amount) => (amount * 100).round() / 100;
 
+  _SalePhotoSession? get _currentPhoto =>
+      _currentPhotoIndex >= 0 && _currentPhotoIndex < _photos.length
+      ? _photos[_currentPhotoIndex]
+      : null;
+
+  bool get _canSystemPopDirectly =>
+      !_isSaving && _stage == _SalesStage.start && _selectedItems.isEmpty;
+
+  bool get _showExplicitBackArrow => _stage != _SalesStage.start;
+
   @override
   void dispose() {
+    _disposePhotoSessions();
+    _manualSearchController.dispose();
     _discountController.dispose();
     _finalPriceController.dispose();
     _notesController.dispose();
-    _sizeFilterController.dispose();
-    _manualSearchController.dispose();
     _customNameController.dispose();
     _customPriceController.dispose();
     super.dispose();
+  }
+
+  void _disposePhotoSessions() {
+    for (final session in _photos) {
+      session.dispose();
+    }
+    _photos.clear();
+    _currentPhotoIndex = 0;
+  }
+
+  _SalePhotoSession _createPhotoSession(SearchImageInput image) {
+    final sessionId = _nextPhotoSessionId++;
+    late final _SalePhotoSession session;
+    final controller = InventorySearchController(
+      onlyUnsold: true,
+      allowFallbackOnManualSearch: false,
+      imageMaxResults: 100,
+      initialSearchMode: _preferredPhotoSearchMode,
+      initialImage: image,
+      gateway: widget.searchGateway,
+      onSelectionReset: () {
+        if (session.selectedItem != null) {
+          session.selectedItem = null;
+        }
+      },
+    );
+    controller.addListener(() {
+      if (!mounted) return;
+      // Keep the preferred mode in sync so subsequent photos start with the
+      // user's last explicitly chosen provider while still having clean state.
+      if (identical(session, _currentPhoto)) {
+        _preferredPhotoSearchMode = controller.searchMode;
+        if (session.selectedItem != null &&
+            !controller.results.any(
+              (item) => item['id'] == session.selectedItem!['id'],
+            )) {
+          session.selectedItem = null;
+        }
+      }
+      setState(() {});
+    });
+    session = _SalePhotoSession(
+      id: sessionId,
+      image: image,
+      controller: controller,
+    );
+    return session;
   }
 
   Future<void> _pickGalleryPhotos() async {
@@ -122,7 +183,9 @@ class _SalesScreenState extends State<SalesScreen> {
         imageQuality: 80,
         maxWidth: 1600,
       );
-      if (files.isNotEmpty) _addPhotos(files);
+      if (files.isNotEmpty) {
+        _addPhotoInputs(files.map(SearchImageInput.fromXFile).toList());
+      }
     } catch (error) {
       _showMessage('Could not select photos: $error', isError: true);
     }
@@ -135,74 +198,66 @@ class _SalesScreenState extends State<SalesScreen> {
         imageQuality: 80,
         maxWidth: 1600,
       );
-      if (file != null) _addPhotos([file]);
+      if (file != null) {
+        _addPhotoInputs([SearchImageInput.fromXFile(file)]);
+      }
     } catch (error) {
       _showMessage('Could not take a photo: $error', isError: true);
     }
   }
 
-  void _addPhotos(List<XFile> files) {
-    setState(() {
-      _isManualSearch = false;
-      _showAddOptions = false;
-      _photos.addAll(files.map(_SalePhoto.new));
-      _currentPhotoIndex = _photos.length - files.length;
-      _filtersExpanded = true;
-      _sizeFilterController.clear();
-      _isCheckout = false;
-    });
-    _analyzeCurrentPhoto();
+  void _enqueuePhotoInputs(
+    List<SearchImageInput> inputs, {
+    required bool triggerSetState,
+  }) {
+    if (inputs.isEmpty) return;
+    // Cancel any previous batch that is no longer active before starting a new batch.
+    if (_stage != _SalesStage.matchingPhoto) {
+      _disposePhotoSessions();
+    } else {
+      _currentPhoto?.controller.cancelPendingRequests();
+    }
+
+    final startIndex = _photos.length;
+    for (final input in inputs) {
+      _photos.add(_createPhotoSession(input));
+    }
+    _currentPhotoIndex = startIndex;
+    _stage = _SalesStage.matchingPhoto;
+
+    if (triggerSetState) {
+      setState(() {});
+    }
+  }
+
+  void _addPhotoInputs(List<SearchImageInput> inputs) {
+    if (inputs.isEmpty) return;
+    _enqueuePhotoInputs(inputs, triggerSetState: true);
+    _startCurrentPhotoAnalysis();
+  }
+
+  Future<void> _startCurrentPhotoAnalysis() async {
+    final photo = _currentPhoto;
+    if (photo == null) return;
+    if (photo.hasStartedAnalysis) return;
+    photo.hasStartedAnalysis = true;
+    // Ensure a clean controller initialized to the current preferred mode.
+    if (photo.controller.searchMode != _preferredPhotoSearchMode) {
+      await photo.controller.switchSearchMode(
+        _preferredPhotoSearchMode,
+        runSearch: false,
+      );
+    }
+    await photo.controller.analyzeImage();
   }
 
   void _startManualSearch() {
+    _currentPhoto?.controller.cancelPendingRequests();
+    _disposePhotoSessions();
     setState(() {
-      _manualResults.clear();
-      _isCheckout = false;
-      _isManualSearch = true;
-      _isLoadingManualResults = false;
-      _manualCategory = 'Minden';
-      _manualGender = 'Minden';
-      _manualLocation = 'All locations';
-      _manualSearchText = '';
-      _manualSearchController.clear();
+      _stage = _SalesStage.manualSearch;
     });
-    _loadManualResults();
-  }
-
-  Future<void> _loadManualResults() async {
-    setState(() => _isLoadingManualResults = true);
-    try {
-      final (sortColumn, ascending) = switch (_sortOption) {
-        'oldest' => ('created_at', true),
-        'price_low' => ('price_est', true),
-        'price_high' => ('price_est', false),
-        _ => ('created_at', false),
-      };
-
-      final results = await InventorySearch.search(
-        InventorySearchCriteria(
-          category: _manualCategory,
-          gender: _manualGender,
-          location: _manualLocation,
-          text: _manualSearchText,
-          onlyUnsold: true,
-          sortColumn: sortColumn,
-          ascending: ascending,
-        ),
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _manualResults
-          ..clear()
-          ..addAll(results);
-        _isLoadingManualResults = false;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _isLoadingManualResults = false);
-      _showMessage('Could not search inventory: $error', isError: true);
-    }
+    _manualSearchController.resetFilters(runSearch: true);
   }
 
   void _toggleManualItem(Map<String, dynamic> item) {
@@ -287,136 +342,13 @@ class _SalesScreenState extends State<SalesScreen> {
     if (item == null || !mounted) return;
     setState(() {
       _selectedItems.add(item);
-      _isManualSearch = false;
-      _showAddOptions = true;
+      _stage = _SalesStage.addOptions;
     });
   }
 
-  Future<void> _analyzeCurrentPhoto() async {
-    if (_currentPhotoIndex >= _photos.length) return;
-    final photo = _photos[_currentPhotoIndex];
-    setState(() {
-      photo.isAnalyzing = true;
-      photo.error = null;
-    });
-
-    try {
-      final bytes = await photo.file.readAsBytes();
-      final result = await ImageInventorySearch.searchByImage(
-        imageBytes: bytes,
-        mimeType: _mimeTypeFor(photo.file),
-        criteria: _criteriaForPhoto(photo),
-        mode: _photoSearchMode,
-      );
-      if (!mounted) return;
-      setState(() {
-        photo.bytes = bytes;
-        photo.aiCriteria = result.aiCriteria;
-        _applyPhotoSearchCriteria(photo, result.criteria);
-        photo.matches = result.matches;
-        photo.usedFallback = result.usedFallback;
-        photo.isAnalyzing = false;
-        _sizeFilterController.text = photo.sizeFilter;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        photo.error = error.toString();
-        photo.isAnalyzing = false;
-      });
-    }
-  }
-
-  String _mimeTypeFor(XFile file) {
-    final mimeType = file.mimeType;
-    if (mimeType == 'image/jpeg' ||
-        mimeType == 'image/png' ||
-        mimeType == 'image/webp') {
-      return mimeType!;
-    }
-    final name = file.name.toLowerCase();
-    if (name.endsWith('.png')) return 'image/png';
-    if (name.endsWith('.webp')) return 'image/webp';
-    return 'image/jpeg';
-  }
-
-  InventorySearchCriteria _criteriaForPhoto(_SalePhoto photo) {
-    final (sortColumn, ascending) = switch (_sortOption) {
-      'oldest' => ('created_at', true),
-      'price_low' => ('price_est', true),
-      'price_high' => ('price_est', false),
-      _ => ('created_at', false),
-    };
-    return InventorySearchCriteria(
-      category: photo.selectedCategory,
-      gender: photo.selectedGender,
-      location: photo.locationFilter,
-      brand: photo.brandFilter,
-      size: photo.sizeFilter,
-      color: photo.colorFilter,
-      pattern: photo.patternFilter,
-      name: photo.nameFilter,
-      condition: photo.conditionFilter,
-      onlyUnsold: true,
-      sortColumn: sortColumn,
-      ascending: ascending,
-      maxResults: 100,
-    );
-  }
-
-  void _applyPhotoSearchCriteria(
-    _SalePhoto photo,
-    InventorySearchCriteria criteria,
-  ) {
-    photo.selectedCategory = criteria.category ?? 'Minden';
-    photo.selectedGender = criteria.gender ?? 'Minden';
-    photo.locationFilter = criteria.location ?? 'All locations';
-    photo.brandFilter = criteria.brand ?? '';
-    photo.sizeFilter = criteria.size ?? '';
-    photo.colorFilter = criteria.color ?? '';
-    photo.patternFilter = criteria.pattern ?? '';
-    photo.nameFilter = criteria.name ?? '';
-    photo.conditionFilter = criteria.condition ?? '';
-    if (criteria.fallback) photo.filterRevision++;
-  }
-
-  Future<void> _refreshPhotoMatches(_SalePhoto photo) async {
-    setState(() {
-      photo.isAnalyzing = true;
-      photo.error = null;
-    });
-    try {
-      final result = await ImageInventorySearch.search(
-        _criteriaForPhoto(photo),
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _applyPhotoSearchCriteria(photo, result.criteria);
-        photo.matches = result.matches;
-        photo.usedFallback = result.usedFallback;
-        photo.isAnalyzing = false;
-        if (identical(photo, _photos[_currentPhotoIndex])) {
-          _sizeFilterController.text = photo.sizeFilter;
-        }
-        if (photo.selectedItem != null &&
-            !result.matches.any(
-              (item) => item['id'] == photo.selectedItem!['id'],
-            )) {
-          photo.selectedItem = null;
-        }
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        photo.error = error.toString();
-        photo.isAnalyzing = false;
-      });
-    }
-  }
-
-  void _selectItem(Map<String, dynamic> item) {
-    final photo = _photos[_currentPhotoIndex];
+  void _selectPhotoMatch(Map<String, dynamic> item) {
+    final photo = _currentPhoto;
+    if (photo == null) return;
     final alreadySelected = _selectedItems.any(
       (selected) => selected['id'] == item['id'],
     );
@@ -429,31 +361,155 @@ class _SalesScreenState extends State<SalesScreen> {
     });
   }
 
-  void _advancePhoto() {
-    final photo = _photos[_currentPhotoIndex];
-    if (photo.selectedItem != null) {
-      _selectedItems.add(photo.selectedItem!);
-      final location = photo.selectedItem!['location']?.toString();
-      if (_selectedItems.length == 1 && _locations.contains(location)) {
-        _location = location!;
+  void _advancePhoto({required bool commitSelection}) {
+    final photo = _currentPhoto;
+    if (photo == null) return;
+
+    // Stop any in-flight request for the photo we are leaving.
+    photo.controller.cancelPendingRequests();
+
+    if (commitSelection && photo.selectedItem != null) {
+      final alreadyAdded = _selectedItems.any(
+        (selected) => selected['id'] == photo.selectedItem!['id'],
+      );
+      if (!alreadyAdded) {
+        _selectedItems.add(photo.selectedItem!);
+        final location = photo.selectedItem!['location']?.toString();
+        if (_selectedItems.length == 1 && _locations.contains(location)) {
+          _location = location!;
+        }
       }
     }
 
     if (_currentPhotoIndex + 1 < _photos.length) {
       setState(() {
         _currentPhotoIndex++;
-        _sizeFilterController.text = _photos[_currentPhotoIndex].sizeFilter;
       });
-      _analyzeCurrentPhoto();
+      _startCurrentPhotoAnalysis();
     } else {
-      setState(() => _showAddOptions = true);
+      _disposePhotoSessions();
+      setState(() {
+        _stage = _selectedItems.isNotEmpty
+            ? _SalesStage.addOptions
+            : _SalesStage.start;
+      });
     }
   }
 
+  Future<bool> _confirmDiscard({
+    required String title,
+    required String content,
+    String confirmLabel = 'Discard',
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Stay'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  Future<void> _handleBackNavigation() async {
+    if (_isSaving) return;
+
+    switch (_stage) {
+      case _SalesStage.start:
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+        return;
+
+      case _SalesStage.checkout:
+        setState(() {
+          _stage = _selectedItems.isNotEmpty
+              ? _SalesStage.addOptions
+              : _SalesStage.start;
+        });
+        return;
+
+      case _SalesStage.manualSearch:
+        _manualSearchController.cancelPendingRequests();
+        setState(() {
+          _stage = _selectedItems.isNotEmpty
+              ? _SalesStage.addOptions
+              : _SalesStage.start;
+        });
+        return;
+
+      case _SalesStage.matchingPhoto:
+        final photo = _currentPhoto;
+        if (photo != null && photo.selectedItem != null) {
+          final leave = await _confirmDiscard(
+            title: 'Leave photo matching?',
+            content: _selectedItems.isNotEmpty
+                ? 'The item selected for this photo has not been added yet. '
+                      'Your ${_selectedItems.length} previously matched '
+                      'item${_selectedItems.length == 1 ? '' : 's'} will be kept.'
+                : 'Leaving will discard the item selected for this photo.',
+            confirmLabel: 'Leave',
+          );
+          if (!leave || !mounted) return;
+        }
+        photo?.controller.cancelPendingRequests();
+        _disposePhotoSessions();
+        setState(() {
+          _stage = _selectedItems.isNotEmpty
+              ? _SalesStage.addOptions
+              : _SalesStage.start;
+        });
+        return;
+
+      case _SalesStage.addOptions:
+        if (_selectedItems.isNotEmpty) {
+          final discard = await _confirmDiscard(
+            title: 'Discard this sale?',
+            content:
+                'You have ${_selectedItems.length} matched '
+                'item${_selectedItems.length == 1 ? '' : 's'} that have not '
+                'been recorded yet.',
+          );
+          if (!discard || !mounted) return;
+        }
+        _resetSaleWorkflow();
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context, false);
+        }
+        return;
+    }
+  }
+
+  void _resetSaleWorkflow() {
+    _manualSearchController.cancelPendingRequests();
+    _disposePhotoSessions();
+    _selectedItems.clear();
+    _discountController.text = '0';
+    _finalPriceController.clear();
+    _notesController.clear();
+    _location = _locations.first;
+    _paymentMethod = 'cash';
+    _soldAt = DateTime.now();
+    _isSaving = false;
+    _stage = _SalesStage.start;
+    if (mounted) setState(() {});
+  }
+
   void _openCheckout() {
+    if (_selectedItems.isEmpty) return;
     setState(() {
-      _isCheckout = true;
-      _showAddOptions = false;
+      _stage = _SalesStage.checkout;
       _discountController.text = '0';
       _finalPriceController.text = _formatAmount(_listedTotal);
     });
@@ -525,7 +581,7 @@ class _SalesScreenState extends State<SalesScreen> {
       context: context,
       initialTime: TimeOfDay.fromDateTime(_soldAt),
     );
-    if (time == null) return;
+    if (time == null || !mounted) return;
 
     setState(() {
       _soldAt = DateTime(
@@ -578,20 +634,30 @@ class _SalesScreenState extends State<SalesScreen> {
     if (_selectedItems.isEmpty || _isSaving) return;
     setState(() => _isSaving = true);
 
+    final params = <String, dynamic>{
+      'p_location': _location,
+      'p_payment_method': _paymentMethod,
+      'p_items': _buildSaleLines(),
+      'p_sold_at': _soldAt.toUtc().toIso8601String(),
+      'p_notes': _notesController.text.trim(),
+    };
+
     try {
-      await Supabase.instance.client.rpc(
-        'record_sale',
-        params: {
-          'p_location': _location,
-          'p_payment_method': _paymentMethod,
-          'p_items': _buildSaleLines(),
-          'p_sold_at': _soldAt.toUtc().toIso8601String(),
-          'p_notes': _notesController.text.trim(),
-        },
-      );
+      if (widget.onRecordSale != null) {
+        await widget.onRecordSale!(params);
+      } else {
+        await Supabase.instance.client.rpc('record_sale', params: params);
+      }
 
       if (!mounted) return;
-      Navigator.pop(context, true);
+      if (Navigator.canPop(context)) {
+        _isSaving = false;
+        Navigator.pop(context, true);
+      } else {
+        // Root route: never pop the last route (which produces a dark screen).
+        _resetSaleWorkflow();
+        _showMessage('Sale recorded successfully!');
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() => _isSaving = false);
@@ -609,37 +675,66 @@ class _SalesScreenState extends State<SalesScreen> {
     );
   }
 
+  String _appBarTitle() => switch (_stage) {
+    _SalesStage.checkout => 'Sale total',
+    _SalesStage.addOptions => 'Add sale items',
+    _SalesStage.manualSearch => 'Search inventory',
+    _SalesStage.matchingPhoto => 'Match sold items',
+    _SalesStage.start => 'Record a sale',
+  };
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _isCheckout
-              ? 'Sale total'
-              : _showAddOptions
-              ? 'Add sale items'
-              : 'Match sold items',
+    final canRoutePop = Navigator.canPop(context);
+    return PopScope(
+      canPop: _canSystemPopDirectly,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          _handleBackNavigation();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: _showExplicitBackArrow || canRoutePop
+              ? IconButton(
+                  tooltip: 'Back',
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: _isSaving ? null : _handleBackNavigation,
+                )
+              : null,
+          title: Text(_appBarTitle()),
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+          actions: [
+            PopupMenuButton<String>(
+              tooltip: 'Navigate',
+              onSelected: (destination) {
+                final page = destination == 'inventory'
+                    ? const InventoryListScreen()
+                    : const SalesDashboardScreen();
+                Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(builder: (_) => page),
+                );
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'inventory', child: Text('Inventory')),
+                PopupMenuItem(
+                  value: 'dashboard',
+                  child: Text('Sales dashboard'),
+                ),
+              ],
+            ),
+          ],
         ),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        backgroundColor: Colors.grey[100],
+        body: switch (_stage) {
+          _SalesStage.start => _buildPhotoPicker(),
+          _SalesStage.matchingPhoto => _buildMatcher(),
+          _SalesStage.manualSearch => _buildManualSearch(),
+          _SalesStage.addOptions => _buildAddOptions(),
+          _SalesStage.checkout => _buildCheckout(),
+        },
       ),
-      backgroundColor: Colors.grey[100],
-      body: _photos.isEmpty
-          ? _isManualSearch
-                ? _isCheckout
-                      ? _buildCheckout()
-                      : _buildManualSearch()
-                : _isCheckout
-                ? _buildCheckout()
-                : _showAddOptions
-                ? _buildAddOptions()
-                : _buildPhotoPicker()
-          : _isCheckout
-          ? _buildCheckout()
-          : _isManualSearch
-          ? _buildManualSearch()
-          : _showAddOptions
-          ? _buildAddOptions()
-          : _buildMatcher(),
     );
   }
 
@@ -711,16 +806,19 @@ class _SalesScreenState extends State<SalesScreen> {
               icon: const Icon(Icons.photo_library),
               label: const Text('Add another photo'),
             ),
+            const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: _takePhoto,
               icon: const Icon(Icons.camera_alt),
               label: const Text('Take another photo'),
             ),
+            const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: _startManualSearch,
               icon: const Icon(Icons.search),
               label: const Text('Add from inventory'),
             ),
+            const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: _addCustomItem,
               icon: const Icon(Icons.add),
@@ -728,7 +826,7 @@ class _SalesScreenState extends State<SalesScreen> {
             ),
             const SizedBox(height: 12),
             FilledButton.tonalIcon(
-              onPressed: _openCheckout,
+              onPressed: _selectedItems.isEmpty ? null : _openCheckout,
               icon: const Icon(Icons.arrow_forward),
               label: const Text('Done adding items'),
             ),
@@ -739,829 +837,101 @@ class _SalesScreenState extends State<SalesScreen> {
   }
 
   Widget _buildManualSearch() {
-    return Column(
-      children: [
-        Flexible(
-          fit: FlexFit.loose,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 320),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  DropdownButtonFormField<String>(
-                    key: ValueKey(_manualCategory),
-                    initialValue: _manualCategory,
-                    decoration: const InputDecoration(
-                      labelText: 'Category',
-                      prefixIcon: Icon(Icons.category),
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    items: filterCategories
-                        .map(
-                          (value) => DropdownMenuItem(
-                            value: value,
-                            child: Text(value),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: _isLoadingManualResults
-                        ? null
-                        : (value) {
-                            if (value != null) {
-                              setState(() => _manualCategory = value);
-                              _loadManualResults();
-                            }
-                          },
-                  ),
-                  const SizedBox(height: 8),
-                  _responsivePair(
-                    DropdownButtonFormField<String>(
-                      key: ValueKey(_manualGender),
-                      initialValue: _manualGender,
-                      decoration: const InputDecoration(
-                        labelText: 'Gender',
-                        prefixIcon: Icon(Icons.people),
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      items: ['Minden', ...genderOptions]
-                          .map(
-                            (value) => DropdownMenuItem(
-                              value: value,
-                              child: Text(value),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: _isLoadingManualResults
-                          ? null
-                          : (value) {
-                              if (value != null) {
-                                setState(() => _manualGender = value);
-                                _loadManualResults();
-                              }
-                            },
-                    ),
-                    DropdownButtonFormField<String>(
-                      key: ValueKey(_manualLocation),
-                      initialValue: _manualLocation,
-                      decoration: const InputDecoration(
-                        labelText: 'Location',
-                        prefixIcon: Icon(Icons.store),
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      items: ['All locations', ..._locations]
-                          .map(
-                            (value) => DropdownMenuItem(
-                              value: value,
-                              child: Text(value),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: _isLoadingManualResults
-                          ? null
-                          : (value) {
-                              if (value != null) {
-                                setState(() => _manualLocation = value);
-                                _loadManualResults();
-                              }
-                            },
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _manualSearchController,
-                    textInputAction: TextInputAction.search,
-                    onChanged: (value) => _manualSearchText = value,
-                    onSubmitted: (_) => _loadManualResults(),
-                    decoration: InputDecoration(
-                      labelText: 'Name or brand',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: IconButton(
-                        tooltip: 'Search inventory',
-                        onPressed: _isLoadingManualResults
-                            ? null
-                            : _loadManualResults,
-                        icon: const Icon(Icons.search),
-                      ),
-                      border: const OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      '${_manualResults.length} items · ${_selectedItems.length} selected',
-                      style: const TextStyle(color: Colors.blueGrey),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+    return InventorySearchView(
+      key: const ValueKey('sales-manual-search'),
+      controller: _manualSearchController,
+      initiallyExpanded: true,
+      emptyMessage: 'No unsold inventory items found.',
+      isItemSelected: (item) =>
+          _selectedItems.any((selected) => selected['id'] == item['id']),
+      onItemTap: _toggleManualItem,
+      bottomBar: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        runAlignment: WrapAlignment.center,
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          TextButton.icon(
+            onPressed: _handleBackNavigation,
+            icon: const Icon(Icons.arrow_back),
+            label: const Text('Back'),
           ),
-        ),
-        Expanded(
-          child: _isLoadingManualResults
-              ? const Center(child: CircularProgressIndicator())
-              : _manualResults.isEmpty
-              ? const Center(child: Text('No unsold inventory items found.'))
-              : GridView.builder(
-                  padding: const EdgeInsets.all(10),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    childAspectRatio: 0.68,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                  ),
-                  itemCount: _manualResults.length,
-                  itemBuilder: (context, index) =>
-                      _buildManualItemCard(_manualResults[index]),
-                ),
-        ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              runAlignment: WrapAlignment.center,
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                TextButton.icon(
-                  onPressed: _isLoadingManualResults
-                      ? null
-                      : () => setState(() {
-                          _isManualSearch = false;
-                          _showAddOptions = _selectedItems.isNotEmpty;
-                        }),
-                  icon: const Icon(Icons.arrow_back),
-                  label: const Text('Back'),
-                ),
-                FilledButton.icon(
-                  onPressed: _selectedItems.isEmpty || _isLoadingManualResults
-                      ? null
-                      : () => setState(() {
-                          _isManualSearch = false;
-                          _showAddOptions = true;
-                        }),
-                  icon: const Icon(Icons.arrow_forward),
-                  label: Text('Continue (${_selectedItems.length})'),
-                ),
-              ],
-            ),
+          FilledButton.icon(
+            onPressed: _selectedItems.isEmpty
+                ? null
+                : () {
+                    _manualSearchController.cancelPendingRequests();
+                    setState(() => _stage = _SalesStage.addOptions);
+                  },
+            icon: const Icon(Icons.arrow_forward),
+            label: Text('Continue (${_selectedItems.length})'),
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildManualItemCard(Map<String, dynamic> item) {
-    final isSelected = _selectedItems.any(
-      (selected) => selected['id'] == item['id'],
-    );
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      color: isSelected ? Colors.green[50] : null,
-      child: InkWell(
-        onTap: () => _toggleManualItem(item),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  ColoredBox(
-                    color: Colors.black12,
-                    child: item['image_url'] == null
-                        ? const Icon(Icons.image_not_supported)
-                        : CachedRemoteImage(
-                            item['image_url'].toString(),
-                            fit: BoxFit.cover,
-                            thumbnail: true,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const Icon(Icons.broken_image),
-                          ),
-                  ),
-                  if (isSelected)
-                    const Align(
-                      alignment: Alignment.topRight,
-                      child: Padding(
-                        padding: EdgeInsets.all(8),
-                        child: CircleAvatar(
-                          backgroundColor: Colors.green,
-                          child: Icon(Icons.check, color: Colors.white),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item['brand']?.toString() ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.blueGrey,
-                    ),
-                  ),
-                  Text(
-                    item['name']?.toString() ?? 'Unknown item',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    '${item['category'] ?? '-'} · ${item['gender'] ?? '-'}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                  Text('${item['price_est'] ?? 0} Ft'),
-                ],
-              ),
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
 
   Widget _buildMatcher() {
-    final photo = _photos[_currentPhotoIndex];
-    final activeFilters = <String>[
-      photo.selectedCategory == 'Minden'
-          ? 'all categories'
-          : photo.selectedCategory,
-      photo.selectedGender == 'Minden' ? 'all genders' : photo.selectedGender,
-      if (photo.sizeFilter.trim().isNotEmpty) 'size ${photo.sizeFilter.trim()}',
-      if (photo.locationFilter != 'All locations')
-        'location ${photo.locationFilter}',
-      if (photo.colorFilter.trim().isNotEmpty)
-        'color ${photo.colorFilter.trim()}',
-      if (photo.patternFilter.trim().isNotEmpty)
-        'pattern ${photo.patternFilter.trim()}',
-      if (photo.nameFilter.trim().isNotEmpty) 'name ${photo.nameFilter.trim()}',
-      if (photo.brandFilter.trim().isNotEmpty)
-        'brand ${photo.brandFilter.trim()}',
-      if (photo.conditionFilter.trim().isNotEmpty)
-        'condition ${photo.conditionFilter.trim()}',
-    ].join(' · ');
-    final sortDescription = switch (_sortOption) {
-      'oldest' => 'oldest upload',
-      'price_low' => 'price low to high',
-      'price_high' => 'price high to low',
-      _ => 'newest upload',
-    };
-    return Column(
-      children: [
-        Flexible(
-          fit: FlexFit.loose,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 390),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Photo ${_currentPhotoIndex + 1} of ${_photos.length}  ·  '
-                    '${_selectedItems.length} matched',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      if (photo.bytes != null)
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.memory(
-                            photo.bytes!,
-                            width: 92,
-                            height: 112,
-                            fit: BoxFit.cover,
-                          ),
-                        )
-                      else
-                        const SizedBox(
-                          width: 92,
-                          height: 112,
-                          child: Center(child: CircularProgressIndicator()),
-                        ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: photo.isAnalyzing
-                            ? const Text(
-                                'Analyzing photo and searching inventory…',
-                              )
-                            : photo.error != null
-                            ? Text(
-                                photo.error!,
-                                style: const TextStyle(color: Colors.red),
-                              )
-                            : Text(
-                                _photoSearchMode == ImageSearchMode.embedded
-                                    ? 'Embedded vector results'
-                                    : 'AI match: ${photo.aiCriteria?['category'] ?? '-'} · '
-                                          '${photo.aiCriteria?['gender'] ?? '-'} · '
-                                          '${photo.aiCriteria?['color'] ?? '-'}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  DropdownButtonFormField<ImageSearchMode>(
-                    initialValue: _photoSearchMode,
-                    decoration: const InputDecoration(
-                      labelText: 'Photo search method',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: ImageSearchMode.embedded,
-                        child: Text('Embedded vectors'),
-                      ),
-                      DropdownMenuItem(
-                        value: ImageSearchMode.gemini,
-                        child: Text('Gemini analysis'),
-                      ),
-                    ],
-                    onChanged: photo.isAnalyzing
-                        ? null
-                        : (mode) {
-                            if (mode == null) return;
-                            setState(() => _photoSearchMode = mode);
-                            _analyzeCurrentPhoto();
-                          },
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Search filters',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      TextButton.icon(
-                        onPressed: () => setState(
-                          () => _filtersExpanded = !_filtersExpanded,
-                        ),
-                        icon: Icon(
-                          _filtersExpanded ? Icons.expand_less : Icons.tune,
-                        ),
-                        label: Text(_filtersExpanded ? 'Hide' : 'Edit'),
-                      ),
-                    ],
-                  ),
-                  if (_filtersExpanded) ...[
-                    DropdownButtonFormField<String>(
-                      initialValue: photo.selectedCategory,
-                      decoration: const InputDecoration(
-                        labelText: 'Search category (change AI result)',
-                        prefixIcon: Icon(Icons.category),
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      items: filterCategories
-                          .map(
-                            (category) => DropdownMenuItem(
-                              value: category,
-                              child: Text(category),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: photo.isAnalyzing
-                          ? null
-                          : (category) {
-                              if (category == null) return;
-                              setState(() {
-                                photo.selectedCategory = category;
-                              });
-                              _refreshPhotoMatches(photo);
-                            },
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: photo.selectedGender,
-                      decoration: const InputDecoration(
-                        labelText: 'Search gender (change AI result)',
-                        prefixIcon: Icon(Icons.people),
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      items: ['Minden', ...genderOptions]
-                          .map(
-                            (gender) => DropdownMenuItem(
-                              value: gender,
-                              child: Text(gender),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: photo.isAnalyzing
-                          ? null
-                          : (gender) {
-                              if (gender == null) return;
-                              setState(() => photo.selectedGender = gender);
-                              _refreshPhotoMatches(photo);
-                            },
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: photo.locationFilter,
-                      decoration: const InputDecoration(
-                        labelText: 'Inventory location',
-                        prefixIcon: Icon(Icons.store),
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      items: ['All locations', ..._locations]
-                          .map(
-                            (location) => DropdownMenuItem(
-                              value: location,
-                              child: Text(location),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: photo.isAnalyzing
-                          ? null
-                          : (location) {
-                              if (location == null) return;
-                              setState(() => photo.locationFilter = location);
-                              _refreshPhotoMatches(photo);
-                            },
-                    ),
-                    const SizedBox(height: 8),
-                    _responsivePair(
-                      TextField(
-                        controller: _sizeFilterController,
-                        textInputAction: TextInputAction.search,
-                        onChanged: (value) => photo.sizeFilter = value,
-                        onSubmitted: (_) => _refreshPhotoMatches(photo),
-                        decoration: InputDecoration(
-                          labelText: 'Size',
-                          hintText: 'M, 32, 42',
-                          prefixIcon: Icon(Icons.straighten),
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                          suffixIcon: IconButton(
-                            tooltip: 'Apply size filter',
-                            icon: const Icon(Icons.search),
-                            onPressed: photo.isAnalyzing
-                                ? null
-                                : () => _refreshPhotoMatches(photo),
-                          ),
-                        ),
-                      ),
-                      _criteriaTextField(
-                        photo: photo,
-                        field: 'color',
-                        label: 'Color',
-                        initialValue: photo.colorFilter,
-                        onChanged: (value) {
-                          photo.colorFilter = value;
-                          photo.colorWasChangedManually = true;
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _responsivePair(
-                      _criteriaTextField(
-                        photo: photo,
-                        field: 'pattern',
-                        label: 'Pattern',
-                        initialValue: photo.patternFilter,
-                        onChanged: (value) {
-                          photo.patternFilter = value;
-                          photo.patternWasChangedManually = true;
-                        },
-                      ),
-                      DropdownButtonFormField<String>(
-                        initialValue: _sortOption,
-                        decoration: const InputDecoration(
-                          labelText: 'Sort matches',
-                          prefixIcon: Icon(Icons.sort),
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'newest',
-                            child: Text('Newest upload'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'oldest',
-                            child: Text('Oldest upload'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'price_low',
-                            child: Text('Price ascending'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'price_high',
-                            child: Text('Price descending'),
-                          ),
-                        ],
-                        onChanged: photo.isAnalyzing
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setState(() => _sortOption = value);
-                                _refreshPhotoMatches(photo);
-                              },
-                      ),
-                    ),
-                    ExpansionTile(
-                      tilePadding: EdgeInsets.zero,
-                      title: const Text('More filters: name, brand, condition'),
-                      children: [
-                        _criteriaTextField(
-                          photo: photo,
-                          field: 'name',
-                          label: 'Name',
-                          initialValue: photo.nameFilter,
-                          onChanged: (value) => photo.nameFilter = value,
-                        ),
-                        const SizedBox(height: 8),
-                        _criteriaTextField(
-                          photo: photo,
-                          field: 'brand',
-                          label: 'Brand',
-                          initialValue: photo.brandFilter,
-                          onChanged: (value) => photo.brandFilter = value,
-                        ),
-                        const SizedBox(height: 8),
-                        _criteriaTextField(
-                          photo: photo,
-                          field: 'condition',
-                          label: 'Condition',
-                          initialValue: photo.conditionFilter,
-                          onChanged: (value) => photo.conditionFilter = value,
-                        ),
-                      ],
-                    ),
-                  ],
-                  if (!photo.isAnalyzing &&
-                      photo.usedFallback &&
-                      photo.matches.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text(
-                        'No matches found, including the broader search using '
-                        'category, location, and brand.',
-                        style: TextStyle(color: Colors.blueGrey),
-                      ),
-                    ),
-                  if (!photo.isAnalyzing &&
-                      photo.matches.isNotEmpty &&
-                      photo.aiCriteria != null &&
-                      _matchesMayBeUnfiltered(photo))
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text(
-                        'No exact matches; showing broader results using category, '
-                        'location, and brand only.',
-                        style: TextStyle(color: Colors.blueGrey),
-                      ),
-                    ),
-                  Text(
-                    'Searching: $activeFilters · sorted by $sortDescription',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.blueGrey,
-                    ),
-                  ),
-                ],
-              ),
+    final photo = _currentPhoto;
+    if (photo == null) {
+      return _buildPhotoPicker();
+    }
+    return InventorySearchView(
+      key: ValueKey('sale-photo-${photo.id}'),
+      controller: photo.controller,
+      initiallyExpanded: true,
+      emptyMessage: 'No unsold inventory items found.',
+      topBanner: Text(
+        'Photo ${_currentPhotoIndex + 1} of ${_photos.length}  ·  '
+        '${_selectedItems.length} matched',
+        style: const TextStyle(fontWeight: FontWeight.bold),
+      ),
+      isItemSelected: (item) => photo.selectedItem?['id'] == item['id'],
+      isItemDisabled: (item) {
+        final alreadySelected = _selectedItems.any(
+          (selected) => selected['id'] == item['id'],
+        );
+        return alreadySelected && photo.selectedItem?['id'] != item['id'];
+      },
+      itemOverlayBuilder: (context, item) {
+        final alreadySelected = _selectedItems.any(
+          (selected) => selected['id'] == item['id'],
+        );
+        final selectedHere = photo.selectedItem?['id'] == item['id'];
+        if (!alreadySelected || selectedHere) return null;
+        return const ColoredBox(
+          color: Colors.black45,
+          child: Center(
+            child: Text(
+              'Already matched',
+              style: TextStyle(color: Colors.white),
             ),
           ),
-        ),
-        if (photo.isAnalyzing)
-          const Expanded(child: Center(child: CircularProgressIndicator()))
-        else if (photo.error != null)
-          Expanded(
-            child: Center(
-              child: FilledButton.tonalIcon(
-                onPressed: _analyzeCurrentPhoto,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry analysis'),
-              ),
-            ),
-          )
-        else if (photo.matches.isEmpty)
-          const Expanded(
-            child: Center(child: Text('No unsold inventory items found.')),
-          )
-        else
-          Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.all(10),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                childAspectRatio: 0.68,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-              ),
-              itemCount: photo.matches.length,
-              itemBuilder: (context, index) =>
-                  _buildMatchCard(photo, photo.matches[index]),
-            ),
-          ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              runAlignment: WrapAlignment.center,
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                TextButton(
-                  onPressed: photo.isAnalyzing ? null : _advancePhoto,
-                  child: const Text('Skip photo'),
-                ),
-                FilledButton.icon(
-                  onPressed: photo.isAnalyzing || photo.selectedItem == null
-                      ? null
-                      : _advancePhoto,
-                  icon: const Icon(Icons.check),
-                  label: Text(
-                    _currentPhotoIndex + 1 == _photos.length
-                        ? 'Finish matching'
-                        : 'Add & next',
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  bool _matchesMayBeUnfiltered(_SalePhoto photo) {
-    return photo.usedFallback;
-  }
-
-  Widget _responsivePair(Widget first, Widget second) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth < 420) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [first, const SizedBox(height: 8), second],
-          );
-        }
-        return Row(
-          children: [
-            Expanded(child: first),
-            const SizedBox(width: 8),
-            Expanded(child: second),
-          ],
         );
       },
-    );
-  }
-
-  Widget _criteriaTextField({
-    required _SalePhoto photo,
-    required String field,
-    required String label,
-    required String initialValue,
-    required ValueChanged<String> onChanged,
-  }) {
-    return TextFormField(
-      key: ValueKey('sale-$_currentPhotoIndex-${photo.filterRevision}-$field'),
-      initialValue: initialValue,
-      textInputAction: TextInputAction.search,
-      onChanged: onChanged,
-      onFieldSubmitted: (_) => _refreshPhotoMatches(photo),
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-        isDense: true,
-        suffixIcon: IconButton(
-          tooltip: 'Apply $label filter',
-          icon: const Icon(Icons.search),
-          onPressed: photo.isAnalyzing
-              ? null
-              : () => _refreshPhotoMatches(photo),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMatchCard(_SalePhoto photo, Map<String, dynamic> item) {
-    final alreadySelected = _selectedItems.any(
-      (selected) => selected['id'] == item['id'],
-    );
-    final selectedHere = photo.selectedItem?['id'] == item['id'];
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      color: selectedHere ? Colors.green[50] : null,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: selectedHere ? Colors.green : Colors.transparent,
-          width: 2,
-        ),
-      ),
-      child: InkWell(
-        onTap: alreadySelected && !selectedHere
-            ? null
-            : () => _selectItem(item),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  ColoredBox(
-                    color: Colors.black12,
-                    child: item['image_url'] == null
-                        ? const Icon(Icons.image_not_supported)
-                        : CachedRemoteImage(
-                            item['image_url'].toString(),
-                            fit: BoxFit.cover,
-                            thumbnail: true,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const Icon(Icons.broken_image),
-                          ),
-                  ),
-                  if (selectedHere)
-                    const Align(
-                      alignment: Alignment.topRight,
-                      child: Padding(
-                        padding: EdgeInsets.all(8),
-                        child: CircleAvatar(
-                          backgroundColor: Colors.green,
-                          child: Icon(Icons.check, color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  if (alreadySelected && !selectedHere)
-                    ColoredBox(
-                      color: Colors.black45,
-                      child: const Center(
-                        child: Text(
-                          'Already matched',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+      onItemTap: _selectPhotoMatch,
+      bottomBar: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        runAlignment: WrapAlignment.center,
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          TextButton(
+            onPressed: () => _advancePhoto(commitSelection: false),
+            child: const Text('Skip photo'),
+          ),
+          FilledButton.icon(
+            onPressed: photo.controller.isLoading || photo.selectedItem == null
+                ? null
+                : () => _advancePhoto(commitSelection: true),
+            icon: const Icon(Icons.check),
+            label: Text(
+              _currentPhotoIndex + 1 == _photos.length
+                  ? 'Finish matching'
+                  : 'Add & next',
             ),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item['brand']?.toString() ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.blueGrey,
-                    ),
-                  ),
-                  Text(
-                    item['name']?.toString() ?? 'Unknown item',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    '${item['category'] ?? '-'} · ${item['gender'] ?? '-'}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                  Text('${item['price_est'] ?? 0} Ft'),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1586,9 +956,20 @@ class _SalesScreenState extends State<SalesScreen> {
           ),
           const SizedBox(height: 8),
           if (_selectedItems.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text('No items matched. Go back and try again.'),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('No items matched. Go back and try again.'),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _handleBackNavigation,
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Back to add items'),
+                  ),
+                ],
+              ),
             )
           else
             ..._selectedItems.map(_buildSaleItemTile),
@@ -1621,6 +1002,7 @@ class _SalesScreenState extends State<SalesScreen> {
           _summaryRow('Discount rate', discount, suffix: '%'),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
+            key: ValueKey('checkout-location-$_location'),
             initialValue: _location,
             decoration: const InputDecoration(
               labelText: 'Sale location',
@@ -1639,6 +1021,7 @@ class _SalesScreenState extends State<SalesScreen> {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
+            key: ValueKey('checkout-payment-$_paymentMethod'),
             initialValue: _paymentMethod,
             decoration: const InputDecoration(
               labelText: 'Payment method',

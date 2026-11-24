@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'screens/inventory_intake_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/invite_password_screen.dart';
+import 'screens/sales_screen.dart';
 
 class YoaronApp extends StatefulWidget {
   const YoaronApp({super.key, this.openedFromInvite = false});
@@ -44,8 +44,8 @@ class _YoaronAppState extends State<YoaronApp> {
                 },
               );
             }
-            // Logged IN -> Show the main camera/intake screen
-            return const InventoryScreen();
+            // Sales logging is the primary screen after sign-in.
+            return const SalesScreen();
           } else {
             // Logged OUT -> Force them to the login screen
             return const LoginScreen();

@@ -9,9 +9,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:yoaron_app/constants/categories.dart';
 import 'package:yoaron_app/models/batch_image_queue.dart';
 
-import 'inventory_list_screen.dart';
-import 'sales_dashboard_screen.dart';
-
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
 
@@ -347,7 +344,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
             'gender': _selectedGender,
             'location': _selectedLocation,
             'image_url': imageUrl,
-            if (embedding != null) 'embedding': embedding,
+            'embedding': ?embedding,
             'color': _colorController.text,
             'pattern': _patternController.text,
             'size': _sizeController.text,
@@ -436,33 +433,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Inventory Manager'),
+        title: const Text('Add inventory item'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.bar_chart, size: 28),
-            tooltip: 'My daily sales',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const SalesDashboardScreen(),
-                ),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.list, size: 30),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const InventoryListScreen(),
-                ),
-              );
-            },
-          ),
-        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),

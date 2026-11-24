@@ -1,110 +1,115 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yoaron_app/constants/categories.dart';
 import 'package:yoaron_app/widgets/cached_remote_image.dart';
-import '../services/inventory_search.dart';
-import '../services/image_inventory_search.dart';
 
-import 'sales_screen.dart';
+import '../controllers/inventory_search_controller.dart';
+import '../services/image_inventory_search.dart';
+import '../services/inventory_search.dart';
+import '../widgets/inventory_search_view.dart';
 import '../widgets/safe_bottom_sheet.dart';
+import 'inventory_intake_screen.dart';
+import 'sales_dashboard_screen.dart';
+import 'sales_screen.dart';
 
 class InventoryListScreen extends StatefulWidget {
-  const InventoryListScreen({super.key});
+  const InventoryListScreen({
+    super.key,
+    this.searchGateway = const SupabaseInventorySearchGateway(),
+    this.checkMissingEmbeddings = true,
+  });
+
+  final InventorySearchGateway searchGateway;
+  final bool checkMissingEmbeddings;
 
   @override
   State<InventoryListScreen> createState() => _InventoryListScreenState();
 }
 
 class _InventoryListScreenState extends State<InventoryListScreen> {
-  List<dynamic> _inventory = [];
-  bool _isLoading = true;
-  bool _filtersExpanded = false;
+  static const _locations = InventorySearch.storeLocations;
 
-  String _selectedFilter = 'Minden';
-  String _selectedGenderFilter = 'Minden';
-  String _selectedLocationFilter = 'All locations';
-  String _selectedSizeFilter = '';
-  String _selectedBrandFilter = '';
-  String _selectedColorFilter = '';
-  String _selectedPatternFilter = '';
-  bool _isAnalyzingPhoto = false;
-  ImageSearchMode _imageSearchMode = ImageSearchMode.embedded;
+  late final InventorySearchController _searchController;
+  final ImagePicker _imagePicker = ImagePicker();
+
   bool _isBackfillingEmbeddings = false;
+  bool _checkedMissingEmbeddings = false;
+  bool _hasMissingEmbeddings = true;
+  String? _embeddingProgress;
   bool _isCheckingDuplicates = false;
   bool _showingDuplicates = false;
   bool _soldAndAvailableOnly = false;
-  bool _usedFallback = false;
   List<Map<String, dynamic>> _duplicatePairs = [];
   List<Map<String, dynamic>> _visibleDuplicatePairs = [];
-  File? _searchImage;
-  final ImagePicker _imagePicker = ImagePicker();
-  final TextEditingController _sizeFilterController = TextEditingController();
-  final TextEditingController _brandFilterController = TextEditingController();
-  final TextEditingController _colorFilterController = TextEditingController();
-  static const _locations = ['Csengery', 'Astoria'];
-  String _sortColumn = 'created_at';
-  bool _sortAscending = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchInventory();
+    _searchController = InventorySearchController(
+      onlyUnsold: false,
+      allowFallbackOnManualSearch: false,
+      imageMaxResults: 100,
+      gateway: widget.searchGateway,
+    );
+    _searchController.applyFiltersAndSearch();
+    if (widget.checkMissingEmbeddings) {
+      _refreshMissingEmbeddings();
+    } else {
+      _checkedMissingEmbeddings = true;
+      _hasMissingEmbeddings = false;
+    }
   }
 
-  Future<void> _fetchInventory({bool broadenIfEmpty = false}) async {
-    setState(() {
-      _isLoading = true;
-      _showingDuplicates = false;
-      _soldAndAvailableOnly = false;
-      _duplicatePairs = [];
-      _visibleDuplicatePairs = [];
-    });
-    try {
-      final criteria = InventorySearchCriteria(
-        category: _selectedFilter,
-        gender: _selectedGenderFilter,
-        location: _selectedLocationFilter,
-        size: _selectedSizeFilter,
-        brand: _selectedBrandFilter,
-        color: _selectedColorFilter,
-        pattern: _selectedPatternFilter,
-        sortColumn: _sortColumn,
-        ascending: _sortAscending,
-      );
-      var data = await InventorySearch.search(criteria);
-      var usedFallback = false;
-      if (broadenIfEmpty && data.isEmpty) {
-        data = await InventorySearch.search(
-          InventorySearchCriteria(
-            category: _selectedFilter,
-            location: _selectedLocationFilter,
-            brand: _selectedBrandFilter,
-            fallback: true,
-            sortColumn: _sortColumn,
-            ascending: _sortAscending,
-          ),
-        );
-        usedFallback = true;
-      }
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
-      setState(() {
-        _inventory = data;
-        _isLoading = false;
-        _usedFallback = usedFallback;
-      });
-    } catch (e) {
-      setState(() => _isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Hiba a betöltésnél: $e'),
-            backgroundColor: Colors.red,
-          ),
+  void _selectInventoryMenuAction(String action) {
+    switch (action) {
+      case 'backfill':
+        _backfillImageEmbeddings();
+      case 'duplicates':
+        _checkPossibleDuplicates();
+      case 'intake':
+        Navigator.push<void>(
+          context,
+          MaterialPageRoute(builder: (_) => const InventoryScreen()),
         );
-      }
+      case 'dashboard':
+        Navigator.push<void>(
+          context,
+          MaterialPageRoute(builder: (_) => const SalesDashboardScreen()),
+        );
+      case 'sale':
+        Navigator.push<bool>(
+          context,
+          MaterialPageRoute(builder: (_) => const SalesScreen()),
+        ).then((recorded) {
+          if (recorded == true && mounted) _refreshCurrentInventoryView();
+        });
+    }
+  }
+
+  Future<void> _refreshCurrentInventoryView() async {
+    if (_showingDuplicates) {
+      setState(() => _showingDuplicates = false);
+    }
+    await _searchController.applyFiltersAndSearch();
+  }
+
+  Future<void> _refreshMissingEmbeddings() async {
+    try {
+      final hasMissing = await ImageInventorySearch.hasMissingEmbeddings();
+      if (!mounted) return;
+      setState(() {
+        _hasMissingEmbeddings = hasMissing;
+        _checkedMissingEmbeddings = true;
+      });
+    } catch (error) {
+      debugPrint('Could not check for missing image vectors: $error');
     }
   }
 
@@ -115,76 +120,75 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
         imageQuality: 80,
         maxWidth: 1600,
       );
-      if (photo == null) return;
-      setState(() {
-        _searchImage = File(photo.path);
-        _isAnalyzingPhoto = true;
-        _usedFallback = false;
-      });
-      final bytes = await photo.readAsBytes();
-      final imageMimeType =
-          photo.mimeType ??
-          (photo.name.toLowerCase().endsWith('.png')
-              ? 'image/png'
-              : photo.name.toLowerCase().endsWith('.webp')
-              ? 'image/webp'
-              : 'image/jpeg');
-      final result = await ImageInventorySearch.searchByImage(
-        imageBytes: bytes,
-        mimeType: imageMimeType,
-        mode: _imageSearchMode,
-        criteria: InventorySearchCriteria(
-          location: _selectedLocationFilter,
-          category: _selectedFilter,
-          gender: _selectedGenderFilter,
-          size: _selectedSizeFilter,
-          brand: _selectedBrandFilter,
-          color: _selectedColorFilter,
-          pattern: _selectedPatternFilter,
-          maxResults: 50,
-        ),
-      );
-      if (!mounted) return;
-      setState(() {
-        _inventory = result.matches;
-        _selectedFilter = result.criteria.category ?? 'Minden';
-        _selectedGenderFilter = result.criteria.gender ?? 'Minden';
-        _selectedLocationFilter = result.criteria.location ?? 'All locations';
-        _selectedSizeFilter = result.criteria.size ?? '';
-        _selectedBrandFilter = result.criteria.brand ?? '';
-        _selectedColorFilter = result.criteria.color ?? '';
-        _selectedPatternFilter = result.criteria.pattern ?? '';
-        _sizeFilterController.text = _selectedSizeFilter;
-        _brandFilterController.text = _selectedBrandFilter;
-        _colorFilterController.text = _selectedColorFilter;
-        _isLoading = false;
-        _showingDuplicates = false;
-        _usedFallback = result.usedFallback;
-      });
+      if (photo == null || !mounted) return;
+      if (_showingDuplicates) {
+        setState(() {
+          _showingDuplicates = false;
+          _soldAndAvailableOnly = false;
+          _duplicatePairs = [];
+          _visibleDuplicatePairs = [];
+        });
+      }
+      await _searchController.setImage(SearchImageInput.fromXFile(photo));
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Photo search failed: $error')));
       }
-    } finally {
-      if (mounted) setState(() => _isAnalyzingPhoto = false);
     }
   }
 
   Future<void> _backfillImageEmbeddings() async {
     setState(() => _isBackfillingEmbeddings = true);
     try {
-      final result = await ImageInventorySearch.backfillMissing(limit: 3);
-      if (!mounted) return;
-      final message = result.attempted == 0
-          ? 'No inventory photos are missing embeddings.'
-          : 'Embedding backfill: ${result.updated} updated, ${result.failed} failed.'
-                '${result.errors.isEmpty ? '' : '\n${result.errors.first}'}'
-                '${result.failed == 0 ? ' Run again for the next 3.' : ''}';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), duration: const Duration(seconds: 8)),
+      final result = await ImageInventorySearch.backfillMissing(
+        onProgress: (completed, total) {
+          if (!mounted) return;
+          setState(() => _embeddingProgress = '$completed/$total');
+        },
       );
+      if (!mounted) return;
+      if (result.total == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No inventory photos are missing embeddings.'),
+          ),
+        );
+      } else {
+        final errorSummary = result.errors.take(5).join('\n\n');
+        final moreErrors = result.errors.length > 5
+            ? '\n\n…and ${result.errors.length - 5} more errors.'
+            : '';
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(
+              result.stoppedEarly
+                  ? 'Embedding backfill paused'
+                  : 'Embedding backfill complete',
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  'Updated ${result.updated} of ${result.total} photos. '
+                  '${result.failed} failed; attempted ${result.attempted}.'
+                  '${result.stoppedEarly ? '\n\nStopped after 3 consecutive errors. Remaining photos were left untouched.' : ''}'
+                  '${errorSummary.isEmpty ? '' : '\n\n$errorSummary$moreErrors'}',
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+      }
+      await _refreshMissingEmbeddings();
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -192,13 +196,24 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isBackfillingEmbeddings = false);
+      if (mounted) {
+        setState(() {
+          _isBackfillingEmbeddings = false;
+          _embeddingProgress = null;
+        });
+      }
     }
   }
 
   Future<void> _checkPossibleDuplicates() async {
     if (_showingDuplicates) {
-      await _fetchInventory();
+      setState(() {
+        _showingDuplicates = false;
+        _soldAndAvailableOnly = false;
+        _duplicatePairs = [];
+        _visibleDuplicatePairs = [];
+      });
+      await _searchController.applyFiltersAndSearch();
       return;
     }
     setState(() => _isCheckingDuplicates = true);
@@ -214,7 +229,6 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
         _duplicatePairs = pairs;
         _soldAndAvailableOnly = false;
         _showingDuplicates = true;
-        _usedFallback = false;
       });
       _applyDuplicateFilter();
     } catch (error) {
@@ -235,7 +249,6 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       final second = Map<String, dynamic>.from(pair['second_item'] as Map);
       final firstId = first['id']?.toString();
       final secondId = second['id']?.toString();
-      // Ignore malformed pairs and any self-pairs.
       if (firstId == null || secondId == null || firstId == secondId) continue;
       final firstIsSold = first['is_sold'] == true;
       final secondIsSold = second['is_sold'] == true;
@@ -369,72 +382,9 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       context,
       MaterialPageRoute(builder: (_) => SalesScreen(initialItems: [item])),
     );
-    if (recorded == true) _fetchInventory();
-  }
-
-  @override
-  void dispose() {
-    _sizeFilterController.dispose();
-    _brandFilterController.dispose();
-    _colorFilterController.dispose();
-    super.dispose();
-  }
-
-  Future<String?> _chooseCategory() async {
-    var matchingCategories = filterCategories;
-    final selection = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Search category'),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: MediaQuery.sizeOf(context).height * 0.6,
-            child: Column(
-              children: [
-                TextField(
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: 'Type a category, e.g. hoo',
-                    prefixIcon: Icon(Icons.search),
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (value) {
-                    setDialogState(() {
-                      matchingCategories = filterCategories
-                          .where(
-                            (category) => category.toLowerCase().contains(
-                              value.trim().toLowerCase(),
-                            ),
-                          )
-                          .toList();
-                    });
-                  },
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: matchingCategories.isEmpty
-                      ? const Center(child: Text('No matching categories'))
-                      : ListView.builder(
-                          itemCount: matchingCategories.length,
-                          itemBuilder: (context, index) {
-                            final category = matchingCategories[index];
-                            return ListTile(
-                              title: Text(category),
-                              selected: category == _selectedFilter,
-                              onTap: () =>
-                                  Navigator.pop(dialogContext, category),
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    return selection;
+    if (recorded == true && mounted) {
+      await _refreshCurrentInventoryView();
+    }
   }
 
   Future<void> _updateItem(
@@ -461,12 +411,16 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
         .eq('id', id);
 
     if (mounted) Navigator.pop(context);
-    _fetchInventory();
+    if (_showingDuplicates) {
+      await _checkPossibleDuplicates();
+    } else {
+      await _searchController.applyFiltersAndSearch();
+    }
   }
 
   Future<void> _deleteItem(dynamic id) async {
-    bool confirm =
-        await showDialog(
+    final confirm =
+        await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Törlés (Delete)'),
@@ -500,7 +454,11 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
         Navigator.pop(context);
       }
 
-      _fetchInventory();
+      if (_showingDuplicates) {
+        await _checkPossibleDuplicates();
+      } else {
+        await _searchController.applyFiltersAndSearch();
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -520,27 +478,32 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   }
 
   void _showEditSheet(Map<String, dynamic> item) {
-    final nameCtrl = TextEditingController(text: item['name']);
+    final nameCtrl = TextEditingController(
+      text: item['name']?.toString() ?? '',
+    );
+    final brandCtrl = TextEditingController(
+      text: item['brand']?.toString() ?? '',
+    );
+    final priceCtrl = TextEditingController(
+      text: item['price_est']?.toString() ?? '',
+    );
+    final sizeCtrl = TextEditingController(
+      text: item['size']?.toString() ?? '',
+    );
 
-    final brandCtrl = TextEditingController(text: item['brand']);
-
-    final priceCtrl = TextEditingController(text: item['price_est'].toString());
-
-    final sizeCtrl = TextEditingController(text: item['size']);
-
-    bool itemIsSold = item['is_sold'] ?? false;
+    bool itemIsSold = item['is_sold'] == true;
     final imageUrl = item['image_url'] as String?;
 
-    final editCategories = clothingCategories;
+    const editCategories = clothingCategories;
 
     String selectedCat = editCategories.contains(item['category'])
-        ? item['category']
+        ? item['category'].toString()
         : defaultClothingCategory;
     String selectedGender = genderOptions.contains(item['gender'])
-        ? item['gender']
+        ? item['gender'].toString()
         : defaultClothingGender;
     String selectedLocation = _locations.contains(item['location'])
-        ? item['location']
+        ? item['location'].toString()
         : _locations.first;
 
     showSafeBottomSheet(
@@ -584,9 +547,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                 'Termék Szerkesztése',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
-
               const SizedBox(height: 15),
-
               SwitchListTile(
                 title: const Text(
                   'Eladva (Mark as Sold)',
@@ -598,9 +559,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   setSheetState(() => itemIsSold = val);
                 },
               ),
-
               const Divider(),
-
               TextField(
                 controller: nameCtrl,
                 decoration: const InputDecoration(
@@ -608,9 +567,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   border: OutlineInputBorder(),
                 ),
               ),
-
               const SizedBox(height: 10),
-
               TextField(
                 controller: brandCtrl,
                 decoration: const InputDecoration(
@@ -618,9 +575,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   border: OutlineInputBorder(),
                 ),
               ),
-
               const SizedBox(height: 10),
-
               TextField(
                 controller: priceCtrl,
                 decoration: const InputDecoration(
@@ -629,9 +584,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                 ),
                 keyboardType: TextInputType.number,
               ),
-
               const SizedBox(height: 10),
-
               TextField(
                 controller: sizeCtrl,
                 decoration: const InputDecoration(
@@ -639,9 +592,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   border: OutlineInputBorder(),
                 ),
               ),
-
               const SizedBox(height: 10),
-
               DropdownButtonFormField<String>(
                 initialValue: selectedCat,
                 decoration: const InputDecoration(
@@ -652,12 +603,10 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                     .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                     .toList(),
                 onChanged: (val) {
-                  setSheetState(() => selectedCat = val!);
+                  if (val != null) setSheetState(() => selectedCat = val);
                 },
               ),
-
               const SizedBox(height: 10),
-
               DropdownButtonFormField<String>(
                 initialValue: selectedGender,
                 decoration: const InputDecoration(
@@ -676,9 +625,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   }
                 },
               ),
-
               const SizedBox(height: 10),
-
               DropdownButtonFormField<String>(
                 initialValue: selectedLocation,
                 decoration: const InputDecoration(
@@ -699,9 +646,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   }
                 },
               ),
-
               const SizedBox(height: 25),
-
               Row(
                 children: [
                   Expanded(
@@ -718,9 +663,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                       ),
                     ),
                   ),
-
                   const SizedBox(width: 15),
-
                   Expanded(
                     flex: 2,
                     child: FilledButton.icon(
@@ -746,7 +689,6 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   ),
                 ],
               ),
-
               const SizedBox(height: 10),
             ],
           );
@@ -782,643 +724,212 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // Paste the unchanged build() implementation from your original file here.
-    // We couldn't fit it into chat due to response size limits.
-    return Scaffold(
-      body: NestedScrollView(
-        floatHeaderSlivers: true,
-        headerSliverBuilder: (context, innerBoxIsScrolled) => [
-          SliverAppBar(
-            floating: true,
-            snap: true,
-            title: const Text('Készlet (Inventory)'),
-            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-            actions: [
-              PopupMenuButton<ImageSource>(
-                tooltip: 'Search by photo',
-                icon: _isAnalyzingPhoto
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.image_search),
-                onSelected: _searchByPhoto,
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: ImageSource.gallery,
-                    child: Text('Choose photo'),
-                  ),
-                  PopupMenuItem(
-                    value: ImageSource.camera,
-                    child: Text('Take photo'),
-                  ),
-                ],
-              ),
-              PopupMenuButton<ImageSearchMode>(
-                tooltip: 'Photo search method',
-                icon: const Icon(Icons.tune),
-                onSelected: (mode) => setState(() => _imageSearchMode = mode),
-                itemBuilder: (context) => [
-                  CheckedPopupMenuItem(
-                    value: ImageSearchMode.embedded,
-                    checked: _imageSearchMode == ImageSearchMode.embedded,
-                    child: const Text('Embedded vectors'),
-                  ),
-                  CheckedPopupMenuItem(
-                    value: ImageSearchMode.gemini,
-                    checked: _imageSearchMode == ImageSearchMode.gemini,
-                    child: const Text('Gemini analysis'),
-                  ),
-                ],
-              ),
-              IconButton(
-                tooltip: 'Generate missing vectors (3 at a time)',
-                onPressed: _isBackfillingEmbeddings
-                    ? null
-                    : _backfillImageEmbeddings,
-                icon: _isBackfillingEmbeddings
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.auto_awesome),
-              ),
-              IconButton(
-                tooltip: 'Record sale',
-                icon: const Icon(Icons.point_of_sale),
-                onPressed: () async {
-                  final recorded = await Navigator.push<bool>(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SalesScreen()),
-                  );
-                  if (recorded == true) _fetchInventory();
-                },
-              ),
-              IconButton(
-                tooltip: _showingDuplicates
-                    ? 'Show all inventory'
-                    : 'Show possible duplicates',
-                icon: _isCheckingDuplicates
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        _showingDuplicates
-                            ? Icons.inventory_2_outlined
-                            : Icons.content_copy,
-                      ),
-                onPressed: _isCheckingDuplicates
-                    ? null
-                    : _checkPossibleDuplicates,
-              ),
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.sort),
-                tooltip: 'Rendezés (Sort)',
-                onSelected: (String result) {
-                  setState(() {
-                    if (result == 'newest') {
-                      _sortColumn = 'created_at';
-                      _sortAscending = false;
-                    } else if (result == 'oldest') {
-                      _sortColumn = 'created_at';
-                      _sortAscending = true;
-                    } else if (result == 'price_low') {
-                      _sortColumn = 'price_est';
-                      _sortAscending = true;
-                    } else if (result == 'price_high') {
-                      _sortColumn = 'price_est';
-                      _sortAscending = false;
-                    }
-                  });
-                  _fetchInventory();
-                },
-                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                  const PopupMenuItem<String>(
-                    value: 'newest',
-                    child: Text('Legújabb elöl (Newest)'),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'oldest',
-                    child: Text('Legrégebbi elöl (Oldest)'),
-                  ),
-                  const PopupMenuDivider(),
-                  const PopupMenuItem<String>(
-                    value: 'price_low',
-                    child: Text('Legolcsóbb elöl (Price: Low-High)'),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'price_high',
-                    child: Text('Legdrágább elöl (Price: High-Low)'),
-                  ),
-                ],
-              ),
-            ],
+  Widget _buildDuplicatesBody() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Text(
+            'Possible duplicate pairs · ${_visibleDuplicatePairs.length}',
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
           ),
-        ],
-        body: LayoutBuilder(
-          builder: (context, constraints) => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 6),
+          child: Text(
+            'Matches require the same brand, exact price, category, and color family, plus a similar description.',
+            style: TextStyle(fontSize: 12, color: Colors.blueGrey),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Wrap(
+            spacing: 8,
             children: [
-              // --- THE FILTER MENU ---
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: constraints.maxHeight * 0.48,
-                ),
-                child: SingleChildScrollView(
-                  child: Container(
-                    color: Colors.white,
-                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'Inventory filters',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: () => setState(
-                                () => _filtersExpanded = !_filtersExpanded,
-                              ),
-                              icon: Icon(
-                                _filtersExpanded
-                                    ? Icons.expand_less
-                                    : Icons.tune,
-                              ),
-                              label: Text(_filtersExpanded ? 'Hide' : 'Edit'),
-                            ),
-                          ],
-                        ),
-                        if (_filtersExpanded) ...[
-                          if (_searchImage != null)
-                            ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: Image.file(
-                                  _searchImage!,
-                                  width: 48,
-                                  height: 48,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                              title: const Text('Photo search'),
-                              subtitle: Text(
-                                _isAnalyzingPhoto
-                                    ? 'Analyzing photo…'
-                                    : 'Filters filled from this photo',
-                              ),
-                              trailing: IconButton(
-                                tooltip: 'Clear photo',
-                                icon: const Icon(Icons.close),
-                                onPressed: () =>
-                                    setState(() => _searchImage = null),
-                              ),
-                            ),
-                          InkWell(
-                            borderRadius: BorderRadius.circular(4),
-                            onTap: () async {
-                              final category = await _chooseCategory();
-                              if (category == null || !mounted) return;
-                              setState(() => _selectedFilter = category);
-                              _fetchInventory();
-                            },
-                            child: InputDecorator(
-                              decoration: const InputDecoration(
-                                labelText: 'Category',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.category),
-                                suffixIcon: Icon(Icons.arrow_drop_down),
-                                isDense: true,
-                              ),
-                              child: Text(_selectedFilter),
-                            ),
-                          ),
-                          SizedBox(
-                            height: 56,
-                            child: ListView(
-                              scrollDirection: Axis.horizontal,
-                              children: ['Minden', ...genderOptions].map((
-                                gender,
-                              ) {
-                                return Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: ChoiceChip(
-                                    label: Text(gender),
-                                    selected: gender == _selectedGenderFilter,
-                                    onSelected: (_) {
-                                      setState(
-                                        () => _selectedGenderFilter = gender,
-                                      );
-                                      _fetchInventory();
-                                    },
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                          SizedBox(
-                            height: 48,
-                            child: ListView(
-                              scrollDirection: Axis.horizontal,
-                              children: ['All locations', ..._locations].map((
-                                location,
-                              ) {
-                                return Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: ChoiceChip(
-                                    label: Text(location),
-                                    selected:
-                                        location == _selectedLocationFilter,
-                                    onSelected: (_) {
-                                      setState(
-                                        () =>
-                                            _selectedLocationFilter = location,
-                                      );
-                                      _fetchInventory();
-                                    },
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                          SizedBox(
-                            height: 56,
-                            child: Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: TextField(
-                                controller: _sizeFilterController,
-                                textInputAction: TextInputAction.search,
-                                onSubmitted: (value) {
-                                  setState(
-                                    () => _selectedSizeFilter = value.trim(),
-                                  );
-                                  _fetchInventory();
-                                },
-                                decoration: InputDecoration(
-                                  labelText: 'Filter by size',
-                                  hintText: 'e.g. M, 32, 42',
-                                  prefixIcon: const Icon(Icons.straighten),
-                                  suffixIcon: IconButton(
-                                    tooltip: 'Apply size filter',
-                                    icon: const Icon(Icons.search),
-                                    onPressed: () {
-                                      setState(
-                                        () => _selectedSizeFilter =
-                                            _sizeFilterController.text.trim(),
-                                      );
-                                      _fetchInventory();
-                                    },
-                                  ),
-                                  border: const OutlineInputBorder(),
-                                  isDense: true,
-                                ),
-                              ),
-                            ),
-                          ),
-                          SizedBox(
-                            height: 56,
-                            child: Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: TextField(
-                                controller: _brandFilterController,
-                                textInputAction: TextInputAction.search,
-                                onSubmitted: (value) {
-                                  setState(
-                                    () => _selectedBrandFilter = value.trim(),
-                                  );
-                                  _fetchInventory();
-                                },
-                                decoration: InputDecoration(
-                                  labelText: 'Filter by brand',
-                                  hintText: 'e.g. Nike',
-                                  prefixIcon: const Icon(
-                                    Icons.branding_watermark,
-                                  ),
-                                  suffixIcon: IconButton(
-                                    tooltip: 'Apply brand filter',
-                                    icon: const Icon(Icons.search),
-                                    onPressed: () {
-                                      setState(
-                                        () => _selectedBrandFilter =
-                                            _brandFilterController.text.trim(),
-                                      );
-                                      _fetchInventory();
-                                    },
-                                  ),
-                                  border: const OutlineInputBorder(),
-                                  isDense: true,
-                                ),
-                              ),
-                            ),
-                          ),
-                          SizedBox(
-                            height: 56,
-                            child: Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: TextField(
-                                controller: _colorFilterController,
-                                textInputAction: TextInputAction.search,
-                                onSubmitted: (value) {
-                                  setState(
-                                    () => _selectedColorFilter = value.trim(),
-                                  );
-                                  _fetchInventory();
-                                },
-                                decoration: InputDecoration(
-                                  labelText: 'Filter by color',
-                                  hintText:
-                                      'e.g. kék (all shades), pink, magenta',
-                                  prefixIcon: const Icon(Icons.color_lens),
-                                  suffixIcon: IconButton(
-                                    tooltip: 'Apply color filter',
-                                    icon: const Icon(Icons.search),
-                                    onPressed: () {
-                                      setState(
-                                        () => _selectedColorFilter =
-                                            _colorFilterController.text.trim(),
-                                      );
-                                      _fetchInventory();
-                                    },
-                                  ),
-                                  border: const OutlineInputBorder(),
-                                  isDense: true,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ] else
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Text(
-                                'Category: $_selectedFilter · Gender: $_selectedGenderFilter · '
-                                'Location: $_selectedLocationFilter'
-                                '${_selectedSizeFilter.isEmpty ? '' : ' · Size: $_selectedSizeFilter'}'
-                                '${_selectedBrandFilter.isEmpty ? '' : ' · Brand: $_selectedBrandFilter'}'
-                                '${_selectedColorFilter.isEmpty ? '' : ' · Color: $_selectedColorFilter'}',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.blueGrey,
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
+              FilterChip(
+                label: const Text('All possible duplicates'),
+                selected: !_soldAndAvailableOnly,
+                onSelected: (selected) {
+                  if (!selected) return;
+                  setState(() => _soldAndAvailableOnly = false);
+                  _applyDuplicateFilter();
+                },
               ),
-
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    _showingDuplicates
-                        ? 'Possible duplicate pairs · ${_visibleDuplicatePairs.length}'
-                        : 'Showing ${_inventory.length} items${_usedFallback ? ' · broader photo matches' : ''}',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-              if (_showingDuplicates)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 0, 16, 6),
-                  child: Text(
-                    'Matches require the same brand, exact price, category, and color family, plus a similar description.',
-                    style: TextStyle(fontSize: 12, color: Colors.blueGrey),
-                  ),
-                ),
-              if (_showingDuplicates)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Wrap(
-                    spacing: 8,
-                    children: [
-                      FilterChip(
-                        label: const Text('All possible duplicates'),
-                        selected: !_soldAndAvailableOnly,
-                        onSelected: (selected) {
-                          if (!selected) return;
-                          setState(() => _soldAndAvailableOnly = false);
-                          _applyDuplicateFilter();
-                        },
-                      ),
-                      FilterChip(
-                        label: const Text('Sold item + unsold copy'),
-                        selected: _soldAndAvailableOnly,
-                        onSelected: (selected) {
-                          setState(() => _soldAndAvailableOnly = selected);
-                          _applyDuplicateFilter();
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-
-              // --- THE GRID VIEW ---
-              Expanded(
-                child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _showingDuplicates
-                    ? _visibleDuplicatePairs.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'No likely duplicates found.',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            )
-                          : ListView.separated(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              itemCount: _visibleDuplicatePairs.length,
-                              separatorBuilder: (_, _) =>
-                                  const SizedBox(height: 2),
-                              itemBuilder: (context, index) =>
-                                  _buildDuplicatePairCard(
-                                    _visibleDuplicatePairs[index],
-                                    index,
-                                  ),
-                            )
-                    : _inventory.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'Nincs találat (No items found)',
-                          style: TextStyle(fontSize: 18, color: Colors.grey),
-                        ),
-                      )
-                    : GridView.builder(
-                        padding: const EdgeInsets.all(10),
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              childAspectRatio: 0.7,
-                              crossAxisSpacing: 10,
-                              mainAxisSpacing: 10,
-                            ),
-                        itemCount: _inventory.length,
-                        itemBuilder: (context, index) {
-                          final item = _inventory[index];
-
-                          // --- NEW: INKWELL MAKES THE CARD TAPPABLE ---
-                          return InkWell(
-                            onTap: () =>
-                                _showEditSheet(item), // Opens the menu!
-                            borderRadius: BorderRadius.circular(12),
-                            child: Card(
-                              clipBehavior: Clip.antiAlias,
-                              elevation: 2,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        Container(
-                                          color: Colors.grey[200],
-                                          child: item['image_url'] != null
-                                              ? CachedRemoteImage(
-                                                  item['image_url'],
-                                                  fit: BoxFit.cover,
-                                                  thumbnail: true,
-                                                )
-                                              : const Icon(
-                                                  Icons.image_not_supported,
-                                                  color: Colors.grey,
-                                                ),
-                                        ),
-                                        if (item['is_sold'] != true)
-                                          Positioned(
-                                            right: 4,
-                                            top: 4,
-                                            child: Material(
-                                              color: Colors.white.withValues(
-                                                alpha: 0.9,
-                                              ),
-                                              shape: const CircleBorder(),
-                                              child: IconButton(
-                                                visualDensity:
-                                                    VisualDensity.compact,
-                                                tooltip: 'Add to sale',
-                                                icon: const Icon(
-                                                  Icons.add_shopping_cart,
-                                                ),
-                                                onPressed: () => _addToSale(
-                                                  Map<String, dynamic>.from(
-                                                    item as Map,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        Positioned(
-                                          left: 0,
-                                          right: 0,
-                                          bottom: 0,
-                                          child: Container(
-                                            padding: const EdgeInsets.fromLTRB(
-                                              10,
-                                              22,
-                                              10,
-                                              10,
-                                            ),
-                                            decoration: const BoxDecoration(
-                                              gradient: LinearGradient(
-                                                begin: Alignment.topCenter,
-                                                end: Alignment.bottomCenter,
-                                                colors: [
-                                                  Colors.transparent,
-                                                  Color(0xCC000000),
-                                                ],
-                                              ),
-                                            ),
-                                            child: Row(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.end,
-                                              children: [
-                                                Expanded(
-                                                  child: Column(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Text(
-                                                        item['brand'] ??
-                                                            'Unknown Brand',
-                                                        style: const TextStyle(
-                                                          color: Colors.white70,
-                                                          fontSize: 11,
-                                                        ),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                      ),
-                                                      Text(
-                                                        item['name'] ??
-                                                            'Unknown Item',
-                                                        style: const TextStyle(
-                                                          color: Colors.white,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                          fontSize: 14,
-                                                        ),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 6),
-                                                Text(
-                                                  '${item['price_est']} Ft',
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 14,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+              FilterChip(
+                label: const Text('Sold item + unsold copy'),
+                selected: _soldAndAvailableOnly,
+                onSelected: (selected) {
+                  setState(() => _soldAndAvailableOnly = selected);
+                  _applyDuplicateFilter();
+                },
               ),
             ],
           ),
         ),
+        Expanded(
+          child: _isCheckingDuplicates
+              ? const Center(child: CircularProgressIndicator())
+              : _visibleDuplicatePairs.isEmpty
+              ? const Center(
+                  child: Text(
+                    'No likely duplicates found.',
+                    style: TextStyle(fontSize: 18, color: Colors.grey),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: _visibleDuplicatePairs.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 2),
+                  itemBuilder: (context, index) => _buildDuplicatePairCard(
+                    _visibleDuplicatePairs[index],
+                    index,
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Készlet (Inventory)'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          PopupMenuButton<ImageSource>(
+            tooltip: 'Search by photo',
+            icon: const Icon(Icons.image_search),
+            onSelected: _searchByPhoto,
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: ImageSource.gallery,
+                child: Text('Choose photo'),
+              ),
+              PopupMenuItem(
+                value: ImageSource.camera,
+                child: Text('Take photo'),
+              ),
+            ],
+          ),
+          PopupMenuButton<String>(
+            tooltip: _isBackfillingEmbeddings
+                ? 'Generating vectors ${_embeddingProgress ?? ''}'
+                : 'More inventory actions',
+            icon: _isBackfillingEmbeddings
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.more_vert),
+            onSelected: _isBackfillingEmbeddings
+                ? null
+                : _selectInventoryMenuAction,
+            itemBuilder: (context) => [
+              if (!_checkedMissingEmbeddings || _hasMissingEmbeddings)
+                PopupMenuItem(
+                  value: 'backfill',
+                  enabled: !_isBackfillingEmbeddings,
+                  child: Text(
+                    _isBackfillingEmbeddings
+                        ? 'Generating vectors ${_embeddingProgress ?? ''}…'
+                        : 'Generate vectors for all items',
+                  ),
+                ),
+              PopupMenuItem(
+                value: 'duplicates',
+                enabled: !_isCheckingDuplicates,
+                child: Text(
+                  _showingDuplicates
+                      ? 'Show all inventory'
+                      : 'Check possible duplicates',
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'intake',
+                child: Text('Add inventory items'),
+              ),
+              const PopupMenuItem(value: 'sale', child: Text('Record a sale')),
+              const PopupMenuItem(
+                value: 'dashboard',
+                child: Text('Sales dashboard'),
+              ),
+            ],
+          ),
+        ],
       ),
+      backgroundColor: Colors.grey[100],
+      body: _showingDuplicates
+          ? _buildDuplicatesBody()
+          : InventorySearchView(
+              key: const ValueKey('inventory-list-search'),
+              controller: _searchController,
+              initiallyExpanded: false,
+              emptyMessage: 'Nincs találat (No items found)',
+              imageActions: TextButton.icon(
+                onPressed: () => _searchController.clearImage(),
+                icon: const Icon(Icons.close, size: 18),
+                label: const Text('Clear photo'),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              itemOverlayBuilder: (context, item) {
+                final isSold = item['is_sold'] == true;
+                if (isSold) {
+                  return Align(
+                    alignment: Alignment.topRight,
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade700,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          child: Text(
+                            'SOLD',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }
+                return Align(
+                  alignment: Alignment.topRight,
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Material(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      shape: const CircleBorder(),
+                      child: IconButton(
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Add to sale',
+                        icon: const Icon(Icons.add_shopping_cart),
+                        onPressed: () => _addToSale(item),
+                      ),
+                    ),
+                  ),
+                );
+              },
+              onItemTap: _showEditSheet,
+            ),
     );
   }
 }

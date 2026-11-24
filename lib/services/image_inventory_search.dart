@@ -12,29 +12,108 @@ class ImageInventorySearchResult {
     required this.criteria,
     required this.matches,
     required this.usedFallback,
+    this.embedding,
+    this.resolvedMode,
   });
 
   final Map<String, dynamic>? aiCriteria;
   final InventorySearchCriteria criteria;
   final List<Map<String, dynamic>> matches;
   final bool usedFallback;
+  final List<num>? embedding;
+  final ImageSearchMode? resolvedMode;
 }
 
 class ImageEmbeddingBackfillResult {
   const ImageEmbeddingBackfillResult({
+    required this.total,
     required this.attempted,
     required this.updated,
     required this.failed,
     required this.errors,
+    required this.stoppedEarly,
   });
 
+  final int total;
   final int attempted;
   final int updated;
   final int failed;
   final List<String> errors;
+  final bool stoppedEarly;
 }
 
 enum ImageSearchMode { embedded, gemini, automatic }
+
+/// Abstraction over Supabase search & image analysis calls so controllers and
+/// screens can be tested cleanly without live network calls.
+abstract class InventorySearchGateway {
+  Future<ImageInventorySearchResult> searchByImage({
+    required Uint8List imageBytes,
+    required String mimeType,
+    required InventorySearchCriteria criteria,
+    required ImageSearchMode mode,
+    required InventorySortOption sortOption,
+  });
+
+  Future<ImageInventorySearchResult> searchByExistingEmbedding({
+    required List<num> embedding,
+    required InventorySearchCriteria criteria,
+    required InventorySortOption sortOption,
+  });
+
+  Future<ImageInventorySearchResult> searchByCriteria({
+    required InventorySearchCriteria criteria,
+    required InventorySortOption sortOption,
+    bool allowFallback = true,
+  });
+}
+
+class SupabaseInventorySearchGateway implements InventorySearchGateway {
+  const SupabaseInventorySearchGateway();
+
+  @override
+  Future<ImageInventorySearchResult> searchByImage({
+    required Uint8List imageBytes,
+    required String mimeType,
+    required InventorySearchCriteria criteria,
+    required ImageSearchMode mode,
+    required InventorySortOption sortOption,
+  }) {
+    return ImageInventorySearch.searchByImage(
+      imageBytes: imageBytes,
+      mimeType: mimeType,
+      criteria: criteria,
+      mode: mode,
+      sortOption: sortOption,
+    );
+  }
+
+  @override
+  Future<ImageInventorySearchResult> searchByExistingEmbedding({
+    required List<num> embedding,
+    required InventorySearchCriteria criteria,
+    required InventorySortOption sortOption,
+  }) {
+    return ImageInventorySearch.searchByExistingEmbedding(
+      embedding: embedding,
+      criteria: criteria,
+      sortOption: sortOption,
+    );
+  }
+
+  @override
+  Future<ImageInventorySearchResult> searchByCriteria({
+    required InventorySearchCriteria criteria,
+    required InventorySortOption sortOption,
+    bool allowFallback = true,
+  }) {
+    return ImageInventorySearch.search(
+      criteria,
+      sortOption: sortOption,
+      allowFallback: allowFallback,
+    );
+  }
+}
 
 /// Image embedding and inventory matching for image based search flows.
 class ImageInventorySearch {
@@ -45,47 +124,36 @@ class ImageInventorySearch {
     required String mimeType,
     required InventorySearchCriteria criteria,
     ImageSearchMode mode = ImageSearchMode.automatic,
+    InventorySortOption? sortOption,
   }) async {
+    final effectiveSort =
+        sortOption ??
+        (mode == ImageSearchMode.gemini
+            ? InventorySortOption.fromColumnAndDirection(
+                sortColumn: criteria.sortColumn,
+                ascending: criteria.ascending,
+              )
+            : InventorySortOption.relevance);
+
     if (mode == ImageSearchMode.gemini) {
-      return _searchWithGemini(imageBytes, mimeType, criteria);
+      return _searchWithGemini(
+        imageBytes,
+        mimeType,
+        criteria,
+        sortOption: effectiveSort == InventorySortOption.relevance
+            ? InventorySortOption.newest
+            : effectiveSort,
+      );
     }
     try {
       final embedding = await _createEmbedding(imageBytes, mimeType);
-      final rows = await Supabase.instance.client.rpc(
-        'search_inventory_by_embedding',
-        params: {
-          'p_embedding': embedding,
-          'p_location': _optional(criteria.location),
-          'p_only_unsold': criteria.onlyUnsold,
-          'p_limit': criteria.maxResults ?? 50,
-          'p_category': _optional(criteria.category),
-          'p_gender': _optional(criteria.gender),
-          'p_size': _optional(criteria.size),
-          'p_brand': _optional(criteria.brand),
-          'p_color': _optional(criteria.color),
-          'p_pattern': _optional(criteria.pattern),
-          'p_name': _optional(criteria.name),
-          'p_condition': _optional(criteria.condition),
-        },
+      final result = await searchByExistingEmbedding(
+        embedding: embedding,
+        criteria: criteria,
+        sortOption: effectiveSort,
       );
-      final matches = (rows as List)
-          .map((row) => Map<String, dynamic>.from(row as Map))
-          .toList();
-      if (matches.isNotEmpty) {
-        return ImageInventorySearchResult(
-          aiCriteria: null,
-          criteria: criteria,
-          matches: matches,
-          usedFallback: false,
-        );
-      }
-      if (mode == ImageSearchMode.embedded) {
-        return ImageInventorySearchResult(
-          aiCriteria: null,
-          criteria: criteria,
-          matches: const [],
-          usedFallback: false,
-        );
+      if (result.matches.isNotEmpty || mode == ImageSearchMode.embedded) {
+        return result;
       }
     } catch (error) {
       if (mode == ImageSearchMode.embedded) rethrow;
@@ -94,18 +162,76 @@ class ImageInventorySearch {
       debugPrint('Vector image search unavailable; using Gemini: $error');
     }
 
-    return _searchWithGemini(imageBytes, mimeType, criteria);
+    return _searchWithGemini(
+      imageBytes,
+      mimeType,
+      criteria,
+      sortOption: effectiveSort == InventorySortOption.relevance
+          ? InventorySortOption.newest
+          : effectiveSort,
+    );
+  }
+
+  /// Queries inventory matches using an already-generated embedding vector
+  /// (avoiding redundant embedding API calls when filters change).
+  static Future<ImageInventorySearchResult> searchByExistingEmbedding({
+    required List<num> embedding,
+    required InventorySearchCriteria criteria,
+    InventorySortOption sortOption = InventorySortOption.relevance,
+  }) async {
+    final rows = await Supabase.instance.client.rpc(
+      'search_inventory_by_embedding',
+      params: {
+        'p_embedding': embedding,
+        'p_location': _optional(criteria.location),
+        'p_only_unsold': criteria.onlyUnsold,
+        'p_limit': criteria.maxResults ?? 100,
+        'p_category': _optional(criteria.category),
+        'p_gender': _optional(criteria.gender),
+        'p_size': _optional(criteria.size),
+        'p_brand': _optional(criteria.brand),
+        'p_color': _optional(criteria.color),
+        'p_pattern': _optional(criteria.pattern),
+        'p_name': _optional(criteria.name),
+        'p_condition': _optional(criteria.condition),
+      },
+    );
+    final rawMatches = (rows as List)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList();
+    final sortedMatches = InventorySearch.sortResults(
+      rawMatches,
+      sortOption: sortOption,
+      preferredCategory: criteria.category,
+    );
+    return ImageInventorySearchResult(
+      aiCriteria: null,
+      criteria: criteria,
+      matches: sortedMatches,
+      usedFallback: false,
+      embedding: embedding,
+      resolvedMode: ImageSearchMode.embedded,
+    );
   }
 
   static Future<ImageInventorySearchResult> _searchWithGemini(
     Uint8List imageBytes,
     String mimeType,
-    InventorySearchCriteria criteria,
-  ) async {
+    InventorySearchCriteria criteria, {
+    required InventorySortOption sortOption,
+  }) async {
     final aiCriteria = await _analyzeWithGemini(imageBytes, mimeType);
-    final fallbackCriteria = InventorySearchCriteria(
-      category: _preferred(criteria.category, aiCriteria['category']),
-      gender: _preferred(criteria.gender, aiCriteria['gender']),
+    final resolvedCategory = _preferredCategory(
+      criteria.category,
+      aiCriteria['category'],
+    );
+    final resolvedGender = _preferredGender(
+      criteria.gender,
+      aiCriteria['gender'],
+    );
+    final queryCriteria = InventorySearchCriteria(
+      category: resolvedCategory,
+      gender: resolvedGender,
       location: criteria.location,
       size: _preferred(criteria.size, aiCriteria['size']),
       brand: _preferred(criteria.brand, aiCriteria['brand']),
@@ -114,18 +240,37 @@ class ImageInventorySearch {
       name: criteria.name,
       condition: criteria.condition,
       onlyUnsold: criteria.onlyUnsold,
-      sortColumn: criteria.sortColumn,
-      ascending: criteria.ascending,
+      sortColumn: sortOption.sortColumn,
+      ascending: sortOption.ascending,
       pageSize: criteria.pageSize,
       maxResults: criteria.maxResults,
     );
-    final result = await search(fallbackCriteria);
+    final result = await search(
+      queryCriteria,
+      sortOption: sortOption,
+      allowFallback: true,
+    );
     return ImageInventorySearchResult(
       aiCriteria: aiCriteria,
       criteria: result.criteria,
       matches: result.matches,
-      usedFallback: true,
+      usedFallback: result.usedFallback,
+      resolvedMode: ImageSearchMode.gemini,
     );
+  }
+
+  static String? _preferredCategory(String? selected, dynamic detected) {
+    final current = _optional(selected);
+    if (current != null) return InventorySearch.normalizeCategory(current);
+    final normalized = InventorySearch.normalizeCategory(detected);
+    return normalized == 'Minden' ? null : normalized;
+  }
+
+  static String? _preferredGender(String? selected, dynamic detected) {
+    final current = _optional(selected);
+    if (current != null) return InventorySearch.normalizeGender(current);
+    final normalized = InventorySearch.normalizeGender(detected);
+    return normalized == 'Minden' ? null : normalized;
   }
 
   static String? _preferred(String? selected, dynamic detected) {
@@ -158,21 +303,32 @@ class ImageInventorySearch {
   /// Embeds the next small batch of legacy rows without touching item data.
   /// Only rows whose embedding is still null are updated.
   static Future<ImageEmbeddingBackfillResult> backfillMissing({
-    int limit = 3,
+    void Function(int completed, int total)? onProgress,
   }) async {
     final client = Supabase.instance.client;
-    final rows = await client
-        .from('inventory')
-        .select('id,image_url')
-        .isFilter('embedding', null)
-        .not('image_url', 'is', null)
-        .order('created_at')
-        .limit(limit.clamp(1, 3));
+    const pageSize = 200;
+    final rows = <dynamic>[];
+    var offset = 0;
+    while (true) {
+      final page = await client
+          .from('inventory')
+          .select('id,image_url')
+          .isFilter('embedding', null)
+          .not('image_url', 'is', null)
+          .order('id')
+          .range(offset, offset + pageSize - 1);
+      rows.addAll(page as List);
+      if ((page as List).length < pageSize) break;
+      offset += pageSize;
+    }
 
     var updated = 0;
     var failed = 0;
     final errors = <String>[];
-    for (final rawRow in rows as List) {
+    var completed = 0;
+    var consecutiveExceptions = 0;
+    var stoppedEarly = false;
+    for (final rawRow in rows) {
       try {
         final row = Map<String, dynamic>.from(rawRow as Map);
         final url = row['image_url']?.toString();
@@ -215,17 +371,38 @@ class ImageInventorySearch {
             .isFilter('embedding', null)
             .select('id');
         updated += (updatedRows as List).length;
+        consecutiveExceptions = 0;
       } catch (error) {
         failed++;
         errors.add('Item ${rawRow['id']}: $error');
+        consecutiveExceptions++;
+      } finally {
+        completed++;
+        onProgress?.call(completed, rows.length);
+      }
+      if (consecutiveExceptions >= 3) {
+        stoppedEarly = true;
+        break;
       }
     }
     return ImageEmbeddingBackfillResult(
-      attempted: (rows as List).length,
+      total: rows.length,
+      attempted: completed,
       updated: updated,
       failed: failed,
       errors: errors,
+      stoppedEarly: stoppedEarly,
     );
+  }
+
+  static Future<bool> hasMissingEmbeddings() async {
+    final rows = await Supabase.instance.client
+        .from('inventory')
+        .select('id')
+        .isFilter('embedding', null)
+        .not('image_url', 'is', null)
+        .limit(1);
+    return (rows as List).isNotEmpty;
   }
 
   static Future<List<num>> _createEmbedding(
@@ -254,30 +431,52 @@ class ImageInventorySearch {
   }
 
   static Future<ImageInventorySearchResult> search(
-    InventorySearchCriteria criteria,
-  ) async {
-    var matches = await InventorySearch.search(criteria);
-    if (matches.isNotEmpty) {
+    InventorySearchCriteria criteria, {
+    InventorySortOption? sortOption,
+    bool allowFallback = true,
+  }) async {
+    final effectiveSort =
+        sortOption ??
+        InventorySortOption.fromColumnAndDirection(
+          sortColumn: criteria.sortColumn,
+          ascending: criteria.ascending,
+        );
+    final alignedCriteria = criteria.copyWith(
+      sortColumn: effectiveSort.sortColumn,
+      ascending: effectiveSort.ascending,
+    );
+    var matches = await InventorySearch.search(alignedCriteria);
+    matches = InventorySearch.sortResults(
+      matches,
+      sortOption: effectiveSort,
+      preferredCategory: alignedCriteria.category,
+    );
+    if (matches.isNotEmpty || !allowFallback) {
       return ImageInventorySearchResult(
         aiCriteria: null,
-        criteria: criteria,
+        criteria: alignedCriteria,
         matches: matches,
         usedFallback: false,
       );
     }
 
     final fallbackCriteria = InventorySearchCriteria(
-      category: criteria.category,
-      location: criteria.location,
-      brand: criteria.brand,
-      onlyUnsold: criteria.onlyUnsold,
+      category: alignedCriteria.category,
+      location: alignedCriteria.location,
+      brand: alignedCriteria.brand,
+      onlyUnsold: alignedCriteria.onlyUnsold,
       fallback: true,
-      sortColumn: criteria.sortColumn,
-      ascending: criteria.ascending,
-      pageSize: criteria.pageSize,
-      maxResults: criteria.maxResults,
+      sortColumn: alignedCriteria.sortColumn,
+      ascending: alignedCriteria.ascending,
+      pageSize: alignedCriteria.pageSize,
+      maxResults: alignedCriteria.maxResults,
     );
     matches = await InventorySearch.search(fallbackCriteria);
+    matches = InventorySearch.sortResults(
+      matches,
+      sortOption: effectiveSort,
+      preferredCategory: fallbackCriteria.category,
+    );
     return ImageInventorySearchResult(
       aiCriteria: null,
       criteria: fallbackCriteria,
