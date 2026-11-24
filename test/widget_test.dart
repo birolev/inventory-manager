@@ -5,7 +5,28 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yoaron_app/app.dart';
 import 'package:yoaron_app/screens/account_screen.dart';
 import 'package:yoaron_app/screens/main_shell.dart';
+import 'package:yoaron_app/services/employee_stats_service.dart';
 import 'package:yoaron_app/theme/app_theme.dart';
+
+class _StubStatsGateway implements EmployeeStatsGateway {
+  @override
+  Future<EmployeeStats> fetchMyStats() async => const EmployeeStats(
+    userId: 'test-user',
+    displayName: 'Teszt Felhasználó',
+    email: 'test@example.com',
+    roles: ['staff'],
+    uploadedItemsCount: 3,
+    salesCount: 2,
+    soldItemsCount: 4,
+    totalSalesRevenue: 20000,
+    activeSalesDays: 2,
+    dailyAvgRevenue: 10000,
+    dailyAvgSalesCount: 1,
+  );
+
+  @override
+  Future<List<EmployeeStats>> fetchAllEmployeeStats() async => const [];
+}
 
 void main() {
   setUpAll(() async {
@@ -55,17 +76,21 @@ void main() {
     },
   );
 
-  testWidgets('AccountScreen shows upcoming stats and sign-out action', (
+  testWidgets('AccountScreen shows personal stats and sign-out action', (
     tester,
   ) async {
     await tester.pumpWidget(
-      MaterialApp(theme: AppTheme.light(), home: const AccountScreen()),
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: AccountScreen(statsGateway: _StubStatsGateway()),
+      ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('Fiók'), findsOneWidget);
     expect(find.text('Saját statisztikák'), findsOneWidget);
-    expect(find.text('Rögzített eladások'), findsOneWidget);
+    expect(find.text('Eladások összesen'), findsOneWidget);
+    expect(find.text('Napi átlagos eladás'), findsOneWidget);
     expect(find.text('Feltöltött termékek'), findsOneWidget);
     expect(find.text('Google értékelések'), findsOneWidget);
     expect(find.text('Kijelentkezés'), findsOneWidget);

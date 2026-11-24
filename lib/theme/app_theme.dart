@@ -62,6 +62,13 @@ abstract final class AppFormat {
 
   static String locationLabel(String location) =>
       location == 'All locations' ? 'Összes üzlet' : location;
+
+  /// Maps store locations to their sales dashboard brand names.
+  static String salesStoreLabel(String? location) => switch (location) {
+    'Csengery' => 'Yoáron',
+    'Astoria' => 'BVS',
+    _ => location ?? '-',
+  };
 }
 
 /// Centralized Boutique Atelier Material 3 theme.

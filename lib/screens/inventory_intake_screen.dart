@@ -314,6 +314,16 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
       final aiValues = _aiValuesForReview(currentItem);
       final finalValues = _finalValuesForReview();
+      final currentUser = Supabase.instance.client.auth.currentUser;
+      final userMeta = currentUser?.userMetadata ?? const <String, dynamic>{};
+      final uploaderEmail = currentUser?.email?.trim();
+      final uploaderName =
+          (userMeta['display_name'] ??
+                  userMeta['full_name'] ??
+                  userMeta['name'] ??
+                  uploaderEmail)
+              ?.toString()
+              .trim();
       final insertedItem = await Supabase.instance.client
           .from('inventory')
           .insert({
@@ -335,6 +345,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
             'location': _selectedLocation,
             'image_url': imageUrl,
             'embedding': ?embedding,
+            'uploaded_by': ?currentUser?.id,
+            if (uploaderEmail != null && uploaderEmail.isNotEmpty)
+              'uploaded_by_email': uploaderEmail,
+            if (uploaderName != null && uploaderName.isNotEmpty)
+              'uploaded_by_name': uploaderName,
             'color': _colorController.text,
             'pattern': _patternController.text,
             'size': _sizeController.text,

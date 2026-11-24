@@ -5,10 +5,40 @@ import 'package:yoaron_app/widgets/cached_remote_image.dart';
 
 import '../theme/app_theme.dart';
 
+enum SalesStoreFilter {
+  all,
+  yoaron,
+  bvs;
+
+  String get label => switch (this) {
+    SalesStoreFilter.all => 'Összes',
+    SalesStoreFilter.yoaron => 'Yoáron',
+    SalesStoreFilter.bvs => 'BVS',
+  };
+
+  bool matches(Map<String, dynamic> sale) {
+    final location = sale['location']?.toString();
+    return switch (this) {
+      SalesStoreFilter.all => true,
+      SalesStoreFilter.yoaron => location == 'Csengery',
+      SalesStoreFilter.bvs => location == 'Astoria',
+    };
+  }
+}
+
 class SalesDashboardScreen extends StatefulWidget {
-  const SalesDashboardScreen({super.key, this.onOpenAccount});
+  const SalesDashboardScreen({
+    super.key,
+    this.onOpenAccount,
+    this.fetchMonthSales,
+  });
 
   final VoidCallback? onOpenAccount;
+  final Future<List<Map<String, dynamic>>> Function(
+    DateTime start,
+    DateTime end,
+  )?
+  fetchMonthSales;
 
   @override
   State<SalesDashboardScreen> createState() => _SalesDashboardScreenState();
@@ -35,6 +65,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
     DateTime.now().month,
   );
   DateTime _selectedDate = DateTime.now();
+  SalesStoreFilter _storeFilter = SalesStoreFilter.all;
   List<Map<String, dynamic>> _sales = [];
   bool _isLoading = true;
   bool _isSavingEdit = false;
@@ -55,19 +86,23 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
     final start = DateTime(_displayedMonth.year, _displayedMonth.month);
     final end = DateTime(_displayedMonth.year, _displayedMonth.month + 1);
     try {
-      final rows = await Supabase.instance.client
-          .from('sales')
-          .select(
-            'id, sold_at, location, payment_method, notes, recorded_by_name, recorded_by_email, recorded_by, '
-            'sale_items(id, item_name, brand, category, size, gender, actual_price, inventory(image_url))',
-          )
-          .gte('sold_at', start.toUtc().toIso8601String())
-          .lt('sold_at', end.toUtc().toIso8601String())
-          .order('sold_at', ascending: false);
+      final loaded = widget.fetchMonthSales != null
+          ? await widget.fetchMonthSales!(start, end)
+          : (await Supabase.instance.client
+                    .from('sales')
+                    .select(
+                      'id, sold_at, location, payment_method, notes, recorded_by_name, recorded_by_email, recorded_by, '
+                      'sale_items(id, item_name, brand, category, size, gender, actual_price, inventory(image_url))',
+                    )
+                    .gte('sold_at', start.toUtc().toIso8601String())
+                    .lt('sold_at', end.toUtc().toIso8601String())
+                    .order('sold_at', ascending: false))
+                .map((row) => Map<String, dynamic>.from(row))
+                .toList();
 
       if (!mounted) return;
       setState(() {
-        _sales = rows.map((row) => Map<String, dynamic>.from(row)).toList();
+        _sales = loaded;
         _isLoading = false;
       });
     } catch (error) {
@@ -78,6 +113,9 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
       });
     }
   }
+
+  List<Map<String, dynamic>> get _filteredSales =>
+      _sales.where(_storeFilter.matches).toList();
 
   void _changeMonth(int offset) {
     setState(() {
@@ -90,12 +128,13 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
     _loadMonth();
   }
 
-  List<Map<String, dynamic>> _salesOn(DateTime date) => _sales.where((sale) {
-    final soldAt = DateTime.parse(sale['sold_at'].toString()).toLocal();
-    return soldAt.year == date.year &&
-        soldAt.month == date.month &&
-        soldAt.day == date.day;
-  }).toList();
+  List<Map<String, dynamic>> _salesOn(DateTime date) =>
+      _filteredSales.where((sale) {
+        final soldAt = DateTime.parse(sale['sold_at'].toString()).toLocal();
+        return soldAt.year == date.year &&
+            soldAt.month == date.month &&
+            soldAt.day == date.day;
+      }).toList();
 
   List<dynamic> _itemsFor(Map<String, dynamic> sale) =>
       sale['sale_items'] as List<dynamic>? ?? const [];
@@ -159,8 +198,11 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
       return name.isEmpty ? brand : '$brand $name';
     }
 
+    final storeSuffix = _storeFilter == SalesStoreFilter.all
+        ? ''
+        : ' (${_storeFilter.label})';
     final lines = <String>[
-      '${monthNames[_selectedDate.month - 1]} ${_selectedDate.day}.',
+      '${monthNames[_selectedDate.month - 1]} ${_selectedDate.day}.$storeSuffix',
     ];
     for (final sale in sales) {
       final itemNames = _itemsFor(sale).map(describeItem).join(', ');
@@ -234,7 +276,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final monthSales = _sales;
+    final monthSales = _filteredSales;
     final monthRevenue = monthSales.fold<double>(
       0,
       (sum, sale) => sum + _saleTotal(sale),
@@ -271,6 +313,38 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  SegmentedButton<SalesStoreFilter>(
+                    showSelectedIcon: false,
+                    style: SegmentedButton.styleFrom(
+                      backgroundColor: AppColors.surface,
+                      selectedBackgroundColor: AppColors.terracottaSoft,
+                      selectedForegroundColor: AppColors.terracotta,
+                      foregroundColor: AppColors.inkMuted,
+                      side: const BorderSide(color: AppColors.border),
+                    ),
+                    segments: const [
+                      ButtonSegment(
+                        value: SalesStoreFilter.yoaron,
+                        label: Text('Yoáron'),
+                        icon: Icon(Icons.storefront_outlined, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: SalesStoreFilter.bvs,
+                        label: Text('BVS'),
+                        icon: Icon(Icons.store_outlined, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: SalesStoreFilter.all,
+                        label: Text('Összes'),
+                      ),
+                    ],
+                    selected: {_storeFilter},
+                    onSelectionChanged: (selection) {
+                      if (selection.isEmpty) return;
+                      setState(() => _storeFilter = selection.first);
+                    },
+                  ),
+                  const SizedBox(height: 14),
                   _MonthStats(
                     monthLabel: _formatMonthYear(_displayedMonth),
                     revenue: _money(monthRevenue),
@@ -477,7 +551,9 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                           .map(
                             (value) => DropdownMenuItem(
                               value: value,
-                              child: Text(value),
+                              child: Text(
+                                '${AppFormat.salesStoreLabel(value)} ($value)',
+                              ),
                             ),
                           )
                           .toList(),
@@ -1137,7 +1213,7 @@ class _DailySalesPanel extends StatelessWidget {
                     ],
                   ),
                   subtitle: Text(
-                    '${sale['location']} · $paymentLabel · $recorder',
+                    '${AppFormat.salesStoreLabel(sale['location']?.toString())} · $paymentLabel · $recorder',
                     style: const TextStyle(
                       fontSize: 12,
                       color: AppColors.inkMuted,
