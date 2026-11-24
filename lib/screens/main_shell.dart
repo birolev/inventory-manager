@@ -10,7 +10,8 @@ import 'sales_screen.dart';
 /// Top-level responsive 4-tab navigation shell for the signed-in application.
 ///
 /// Uses a bottom [NavigationBar] on phones and a left [NavigationRail] on
-/// wider tablet/web viewports while preserving each tab's state.
+/// wider tablet/web viewports while preserving each tab's state and keeping
+/// Készlet and Napló automatically refreshed after sales or intake changes.
 class MainShell extends StatefulWidget {
   const MainShell({super.key, this.initialIndex = 0});
 
@@ -22,6 +23,15 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   late int _selectedIndex = widget.initialIndex.clamp(0, 3);
+  final ValueNotifier<int> _inventoryRevision = ValueNotifier<int>(0);
+  final ValueNotifier<int> _salesRevision = ValueNotifier<int>(0);
+
+  @override
+  void dispose() {
+    _inventoryRevision.dispose();
+    _salesRevision.dispose();
+    super.dispose();
+  }
 
   void _openAccount() {
     Navigator.push<void>(
@@ -35,13 +45,37 @@ class _MainShellState extends State<MainShell> {
     setState(() => _selectedIndex = index);
   }
 
+  void _notifyInventoryChanged() {
+    _inventoryRevision.value++;
+  }
+
+  void _notifySaleRecorded() {
+    _inventoryRevision.value++;
+    _salesRevision.value++;
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      SalesScreen(onOpenAccount: _openAccount),
-      InventoryListScreen(onOpenAccount: _openAccount),
-      InventoryScreen(onOpenAccount: _openAccount),
-      SalesDashboardScreen(onOpenAccount: _openAccount),
+      SalesScreen(
+        onOpenAccount: _openAccount,
+        onSaleRecorded: _notifySaleRecorded,
+        onOpenSalesLog: () => _selectTab(3),
+      ),
+      InventoryListScreen(
+        onOpenAccount: _openAccount,
+        refreshListenable: _inventoryRevision,
+        onSaleRecorded: _notifySaleRecorded,
+      ),
+      InventoryScreen(
+        onOpenAccount: _openAccount,
+        onInventoryChanged: _notifyInventoryChanged,
+      ),
+      SalesDashboardScreen(
+        onOpenAccount: _openAccount,
+        refreshListenable: _salesRevision,
+        onInventoryChanged: _notifyInventoryChanged,
+      ),
     ];
 
     return LayoutBuilder(

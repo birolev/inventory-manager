@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -31,6 +32,8 @@ class SalesDashboardScreen extends StatefulWidget {
     super.key,
     this.onOpenAccount,
     this.fetchMonthSales,
+    this.refreshListenable,
+    this.onInventoryChanged,
   });
 
   final VoidCallback? onOpenAccount;
@@ -39,6 +42,8 @@ class SalesDashboardScreen extends StatefulWidget {
     DateTime end,
   )?
   fetchMonthSales;
+  final ValueListenable<int>? refreshListenable;
+  final VoidCallback? onInventoryChanged;
 
   @override
   State<SalesDashboardScreen> createState() => _SalesDashboardScreenState();
@@ -74,7 +79,27 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    widget.refreshListenable?.addListener(_onExternalRefresh);
     _loadMonth();
+  }
+
+  @override
+  void didUpdateWidget(covariant SalesDashboardScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshListenable != widget.refreshListenable) {
+      oldWidget.refreshListenable?.removeListener(_onExternalRefresh);
+      widget.refreshListenable?.addListener(_onExternalRefresh);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.refreshListenable?.removeListener(_onExternalRefresh);
+    super.dispose();
+  }
+
+  void _onExternalRefresh() {
+    if (mounted) _loadMonth();
   }
 
   Future<void> _loadMonth() async {
@@ -730,6 +755,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
         _displayedMonth = DateTime(editedDate.year, editedDate.month);
         _isSavingEdit = false;
       });
+      widget.onInventoryChanged?.call();
       await _loadMonth();
     } catch (error) {
       if (!mounted) return;
@@ -775,6 +801,7 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
       );
       if (!mounted) return;
       setState(() => _isSavingEdit = false);
+      widget.onInventoryChanged?.call();
       await _loadMonth();
     } catch (error) {
       if (!mounted) return;

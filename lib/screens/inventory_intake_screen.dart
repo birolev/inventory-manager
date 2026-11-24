@@ -13,9 +13,14 @@ import '../services/inventory_search.dart';
 import '../theme/app_theme.dart';
 
 class InventoryScreen extends StatefulWidget {
-  const InventoryScreen({super.key, this.onOpenAccount});
+  const InventoryScreen({
+    super.key,
+    this.onOpenAccount,
+    this.onInventoryChanged,
+  });
 
   final VoidCallback? onOpenAccount;
+  final VoidCallback? onInventoryChanged;
 
   @override
   State<InventoryScreen> createState() => _InventoryScreenState();
@@ -24,6 +29,10 @@ class InventoryScreen extends StatefulWidget {
 class _InventoryScreenState extends State<InventoryScreen> {
   BatchImageQueue? _queue;
   final ImagePicker _picker = ImagePicker();
+  final List<({dynamic id, Uint8List bytes, String mimeType})>
+  _pendingEmbeddingRetries = [];
+  bool _isRunningBackgroundAnalysis = false;
+  bool _isRetryingEmbeddings = false;
 
   bool _isUploading = false;
   bool _isEditing = false;
@@ -106,6 +115,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   void _initializeQueue(List<XFile> files) {
+    _pendingEmbeddingRetries.clear();
     setState(() {
       _queue = BatchImageQueue(files.map((f) => QueueItem(f)).toList());
       _isEditing = false;
@@ -114,21 +124,38 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _startBackgroundAnalysis() async {
-    if (_queue == null) return;
-
-    for (var item in _queue!.items) {
-      if (!item.isReady && !item.isAnalyzing) {
-        await _analyzeItem(item);
+    if (_isRunningBackgroundAnalysis) return;
+    _isRunningBackgroundAnalysis = true;
+    try {
+      while (mounted && _queue != null && _queue!.hasNext) {
+        final queue = _queue!;
+        QueueItem? nextPending;
+        for (var i = queue.currentIndex; i < queue.items.length; i++) {
+          final candidate = queue.items[i];
+          if (!candidate.isReady && !candidate.isAnalyzing) {
+            nextPending = candidate;
+            break;
+          }
+        }
+        if (nextPending == null) break;
+        await _analyzeItem(queue, nextPending);
       }
+    } finally {
+      _isRunningBackgroundAnalysis = false;
     }
   }
 
-  Future<void> _analyzeItem(QueueItem item) async {
+  Future<void> _analyzeItem(BatchImageQueue queue, QueueItem item) async {
     item.isAnalyzing = true;
-    if (_queue?.current == item && mounted) {
+    item.analysisAttempts++;
+    if (identical(_queue, queue) &&
+        queue.hasNext &&
+        identical(queue.current, item) &&
+        mounted) {
       setState(() {});
     }
 
+    var shouldDelayRetry = false;
     try {
       final imageBytes = await item.bytes;
       final result = await Supabase.instance.client.functions.invoke(
@@ -139,6 +166,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
           'mimeType': 'image/jpeg',
         },
       );
+      if (result.status != 200 || result.data is! Map) {
+        throw Exception('AI status ${result.status}');
+      }
       final responseData = Map<String, dynamic>.from(result.data as Map);
       if (responseData['result'] is Map) {
         item.aiResult = Map<String, dynamic>.from(
@@ -153,18 +183,37 @@ class _InventoryScreenState extends State<InventoryScreen> {
           ..remove('_model')
           ..remove('model');
       }
+      item.isReady = true;
     } catch (e) {
-      _showSnackBar('AI elemzési hiba: $e', isError: true);
-      item.aiResult = {};
+      if (item.analysisAttempts < QueueItem.maxAnalysisAttempts) {
+        // Put the failed item back at the end of the queue to retry later.
+        final movedBehindOthers = queue.requeueItem(item);
+        if (!movedBehindOthers) {
+          shouldDelayRetry = true;
+        }
+      } else {
+        item.aiResult = {};
+        item.isReady = true;
+        item.failedAfterRetries = true;
+        _showSnackBar(
+          'Az AI elemzés ${QueueItem.maxAnalysisAttempts} próba után sikertelen volt — töltsd ki kézzel az adatokat.',
+          isError: true,
+        );
+      }
     } finally {
       item.isAnalyzing = false;
-      item.isReady = true;
-
-      if (mounted && _queue?.current == item) {
-        _populateControllers(item);
-      } else if (mounted) {
-        setState(() {});
+      if (mounted && identical(_queue, queue) && queue.hasNext) {
+        final current = queue.current;
+        if (current.isReady && !_isEditing) {
+          _populateControllers(current);
+        } else {
+          setState(() {});
+        }
       }
+    }
+
+    if (shouldDelayRetry && mounted && identical(_queue, queue)) {
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
     }
   }
 
@@ -359,6 +408,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
           .select('id')
           .single();
 
+      if (embedding == null) {
+        _pendingEmbeddingRetries.add((
+          id: insertedItem['id'],
+          bytes: imageBytes,
+          mimeType: currentItem.image.mimeType ?? 'image/jpeg',
+        ));
+      }
+
       if (currentItem.aiModel != null && aiValues.isNotEmpty) {
         unawaited(
           _writeAiIntakeReview(
@@ -370,11 +427,61 @@ class _InventoryScreenState extends State<InventoryScreen> {
         );
       }
 
+      widget.onInventoryChanged?.call();
       _showSnackBar('Termék sikeresen mentve a készletbe!');
       _moveToNextItemInQueue();
     } catch (e) {
       setState(() => _isUploading = false);
       _showSnackBar('Mentési hiba: $e', isError: true);
+    }
+  }
+
+  Future<void> _retryMissingBatchEmbeddings() async {
+    if (_isRetryingEmbeddings || _pendingEmbeddingRetries.isEmpty) return;
+    _isRetryingEmbeddings = true;
+    final itemsToRetry = List.of(_pendingEmbeddingRetries);
+    _pendingEmbeddingRetries.clear();
+
+    var fixed = 0;
+    try {
+      for (final entry in itemsToRetry) {
+        try {
+          final response = await Supabase.instance.client.functions.invoke(
+            'image-embedding',
+            body: {
+              'imageBase64': base64Encode(entry.bytes),
+              'mimeType': entry.mimeType,
+            },
+          );
+          if (response.status != 200 || response.data is! Map) continue;
+          final embedding =
+              (Map<String, dynamic>.from(response.data as Map)['embedding']
+                      as List)
+                  .cast<num>();
+          await Supabase.instance.client
+              .from('inventory')
+              .update({'embedding': embedding})
+              .eq('id', entry.id)
+              .isFilter('embedding', null);
+          fixed++;
+        } catch (error) {
+          debugPrint('Post-batch embedding retry failed for ${entry.id}: $error');
+        }
+      }
+      if (mounted) {
+        if (fixed > 0) {
+          _showSnackBar(
+            'Hiányzó vizuális vektorok pótolva ($fixed/${itemsToRetry.length}).',
+          );
+        } else {
+          _showSnackBar(
+            'A hiányzó vizuális vektorok pótlása nem sikerült. Később a Készlet menüből újrafuttatható.',
+            isError: true,
+          );
+        }
+      }
+    } finally {
+      _isRetryingEmbeddings = false;
     }
   }
 
@@ -391,14 +498,20 @@ class _InventoryScreenState extends State<InventoryScreen> {
     _isEditing = false;
     _isUploading = false;
 
+    var finishedBatch = false;
     setState(() {
       _queue!.moveNext();
       if (!_queue!.hasNext) {
         _queue = null;
+        finishedBatch = true;
       } else if (_queue!.current.isReady) {
         _populateControllers(_queue!.current);
       }
     });
+
+    if (finishedBatch && _pendingEmbeddingRetries.isNotEmpty) {
+      unawaited(_retryMissingBatchEmbeddings());
+    }
   }
 
   void _discardCurrentItem() {

@@ -179,12 +179,13 @@ class ImageInventorySearch {
     required InventorySearchCriteria criteria,
     InventorySortOption sortOption = InventorySortOption.relevance,
   }) async {
+    final saleStatus = criteria.effectiveSaleStatus;
     final rows = await Supabase.instance.client.rpc(
       'search_inventory_by_embedding',
       params: {
         'p_embedding': embedding,
         'p_location': _optional(criteria.location),
-        'p_only_unsold': criteria.onlyUnsold,
+        'p_only_unsold': saleStatus == InventorySaleStatusFilter.available,
         'p_limit': criteria.maxResults ?? 100,
         'p_category': _optional(criteria.category),
         'p_gender': _optional(criteria.gender),
@@ -196,9 +197,14 @@ class ImageInventorySearch {
         'p_condition': _optional(criteria.condition),
       },
     );
-    final rawMatches = (rows as List)
+    var rawMatches = (rows as List)
         .map((row) => Map<String, dynamic>.from(row as Map))
         .toList();
+    if (saleStatus == InventorySaleStatusFilter.sold) {
+      rawMatches = rawMatches
+          .where((item) => item['is_sold'] == true)
+          .toList();
+    }
     final sortedMatches = InventorySearch.sortResults(
       rawMatches,
       sortOption: sortOption,
@@ -240,6 +246,7 @@ class ImageInventorySearch {
       name: criteria.name,
       condition: criteria.condition,
       onlyUnsold: criteria.onlyUnsold,
+      saleStatus: criteria.effectiveSaleStatus,
       sortColumn: sortOption.sortColumn,
       ascending: sortOption.ascending,
       pageSize: criteria.pageSize,
@@ -465,6 +472,7 @@ class ImageInventorySearch {
       location: alignedCriteria.location,
       brand: alignedCriteria.brand,
       onlyUnsold: alignedCriteria.onlyUnsold,
+      saleStatus: alignedCriteria.effectiveSaleStatus,
       fallback: true,
       sortColumn: alignedCriteria.sortColumn,
       ascending: alignedCriteria.ascending,

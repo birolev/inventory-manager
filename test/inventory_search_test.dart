@@ -1,6 +1,9 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:yoaron_app/models/batch_image_queue.dart';
 import 'package:yoaron_app/services/inventory_search.dart';
 
 void main() {
@@ -265,6 +268,23 @@ void main() {
       expect(InventorySearch.normalizeGender('ferfi'), 'férfi');
       expect(InventorySearch.normalizeGender('NŐI'), 'női');
       expect(InventorySearch.normalizeGender('invalid'), 'Minden');
+    });
+  });
+
+  group('BatchImageQueue.requeueItem', () {
+    test('moves a failed item to the end of the remaining queue', () {
+      final a = QueueItem(XFile.fromData(Uint8List(1), name: 'a.jpg'));
+      final b = QueueItem(XFile.fromData(Uint8List(1), name: 'b.jpg'));
+      final c = QueueItem(XFile.fromData(Uint8List(1), name: 'c.jpg'));
+      final queue = BatchImageQueue([a, b, c]);
+
+      expect(queue.requeueItem(a), isTrue);
+      expect(queue.items, [b, c, a]);
+      expect(queue.current, b);
+
+      // Requeuing the last item is a no-op returning false.
+      expect(queue.requeueItem(a), isFalse);
+      expect(queue.items, [b, c, a]);
     });
   });
 }

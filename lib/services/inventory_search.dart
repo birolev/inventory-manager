@@ -52,6 +52,19 @@ enum InventorySortOption {
   }
 }
 
+/// Filter for item sale availability in inventory views.
+enum InventorySaleStatusFilter {
+  all,
+  available,
+  sold;
+
+  String get label => switch (this) {
+    InventorySaleStatusFilter.available => 'Elérhető',
+    InventorySaleStatusFilter.sold => 'Eladva',
+    InventorySaleStatusFilter.all => 'Összes',
+  };
+}
+
 /// Shared criteria for every screen that searches inventory.
 class InventorySearchCriteria {
   const InventorySearchCriteria({
@@ -66,6 +79,7 @@ class InventorySearchCriteria {
     this.condition,
     this.text,
     this.onlyUnsold = false,
+    this.saleStatus,
     this.fallback = false,
     this.sortColumn = 'created_at',
     this.ascending = false,
@@ -84,11 +98,18 @@ class InventorySearchCriteria {
   final String? condition;
   final String? text;
   final bool onlyUnsold;
+  final InventorySaleStatusFilter? saleStatus;
   final bool fallback;
   final String sortColumn;
   final bool ascending;
   final int pageSize;
   final int? maxResults;
+
+  InventorySaleStatusFilter get effectiveSaleStatus =>
+      saleStatus ??
+      (onlyUnsold
+          ? InventorySaleStatusFilter.available
+          : InventorySaleStatusFilter.all);
 
   InventorySearchCriteria copyWith({
     String? category,
@@ -102,6 +123,7 @@ class InventorySearchCriteria {
     String? condition,
     String? text,
     bool? onlyUnsold,
+    InventorySaleStatusFilter? saleStatus,
     bool? fallback,
     String? sortColumn,
     bool? ascending,
@@ -121,6 +143,7 @@ class InventorySearchCriteria {
       condition: condition ?? this.condition,
       text: text ?? this.text,
       onlyUnsold: onlyUnsold ?? this.onlyUnsold,
+      saleStatus: saleStatus ?? this.saleStatus,
       fallback: fallback ?? this.fallback,
       sortColumn: sortColumn ?? this.sortColumn,
       ascending: ascending ?? this.ascending,
@@ -135,7 +158,7 @@ class InventorySearch {
   InventorySearch._();
 
   static const columns =
-      'id, name, brand, price_est, category, gender, location, size, color, pattern, condition, image_url, is_sold, created_at';
+      'id, name, brand, price_est, category, secondary_categories, gender, location, size, color, pattern, condition, image_url, is_sold, created_at, uploaded_by, uploaded_by_email, uploaded_by_name';
 
   static const sortableColumns = {'created_at', 'price_est'};
 
@@ -530,7 +553,14 @@ class InventorySearch {
       dynamic query = Supabase.instance.client
           .from('inventory')
           .select(columns);
-      if (criteria.onlyUnsold) query = query.eq('is_sold', false);
+      switch (criteria.effectiveSaleStatus) {
+        case InventorySaleStatusFilter.available:
+          query = query.eq('is_sold', false);
+        case InventorySaleStatusFilter.sold:
+          query = query.eq('is_sold', true);
+        case InventorySaleStatusFilter.all:
+          break;
+      }
 
       final category = criteria.category?.trim() ?? '';
       if (category.isNotEmpty && category != 'Minden') {

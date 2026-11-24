@@ -57,6 +57,7 @@ class SearchImageInput {
 class InventorySearchController extends ChangeNotifier {
   InventorySearchController({
     this.onlyUnsold = true,
+    InventorySaleStatusFilter? initialSaleStatus,
     this.allowFallbackOnManualSearch = false,
     this.imageMaxResults = 100,
     ImageSearchMode initialSearchMode = ImageSearchMode.embedded,
@@ -65,6 +66,11 @@ class InventorySearchController extends ChangeNotifier {
     this.onSelectionReset,
   }) : _gateway = gateway,
        _searchMode = _normalizeMode(initialSearchMode),
+       _saleStatusFilter =
+           initialSaleStatus ??
+           (onlyUnsold
+               ? InventorySaleStatusFilter.available
+               : InventorySaleStatusFilter.all),
        _image = initialImage,
        _imageBytes = initialImage?.initialBytes {
     _sortOption = _defaultSortOption();
@@ -79,6 +85,7 @@ class InventorySearchController extends ChangeNotifier {
   SearchImageInput? _image;
   Uint8List? _imageBytes;
   ImageSearchMode _searchMode;
+  InventorySaleStatusFilter _saleStatusFilter;
 
   String _selectedCategory = 'Minden';
   String _selectedGender = 'Minden';
@@ -113,6 +120,7 @@ class InventorySearchController extends ChangeNotifier {
   Uint8List? get imageBytes => _imageBytes;
   bool get hasImage => _image != null;
   ImageSearchMode get searchMode => _searchMode;
+  InventorySaleStatusFilter get saleStatusFilter => _saleStatusFilter;
 
   String get selectedCategory => _selectedCategory;
   String get selectedGender => _selectedGender;
@@ -196,11 +204,24 @@ class InventorySearchController extends ChangeNotifier {
       pattern: _patternFilter,
       name: _nameFilter,
       condition: _conditionFilter,
-      onlyUnsold: onlyUnsold,
+      onlyUnsold: _saleStatusFilter == InventorySaleStatusFilter.available,
+      saleStatus: _saleStatusFilter,
       sortColumn: _sortOption.sortColumn,
       ascending: _sortOption.ascending,
       maxResults: maxResults,
     );
+  }
+
+  Future<void> setSaleStatusFilter(
+    InventorySaleStatusFilter status, {
+    bool runSearch = true,
+  }) async {
+    if (_saleStatusFilter == status) return;
+    _saleStatusFilter = status;
+    _safeNotify();
+    if (runSearch) {
+      await applyFiltersAndSearch();
+    }
   }
 
   void _safeNotify() {

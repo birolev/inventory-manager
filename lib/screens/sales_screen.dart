@@ -29,6 +29,24 @@ class _SalePhotoSession {
   }
 }
 
+class _LastSaleSummary {
+  const _LastSaleSummary({
+    required this.total,
+    required this.itemCount,
+    required this.location,
+    required this.paymentMethod,
+    required this.soldAt,
+    required this.itemNames,
+  });
+
+  final double total;
+  final int itemCount;
+  final String location;
+  final String paymentMethod;
+  final DateTime soldAt;
+  final List<String> itemNames;
+}
+
 class SalesScreen extends StatefulWidget {
   const SalesScreen({
     super.key,
@@ -37,6 +55,8 @@ class SalesScreen extends StatefulWidget {
     this.searchGateway = const SupabaseInventorySearchGateway(),
     this.onRecordSale,
     this.onOpenAccount,
+    this.onSaleRecorded,
+    this.onOpenSalesLog,
   });
 
   final List<Map<String, dynamic>> initialItems;
@@ -44,6 +64,8 @@ class SalesScreen extends StatefulWidget {
   final InventorySearchGateway searchGateway;
   final Future<void> Function(Map<String, dynamic> params)? onRecordSale;
   final VoidCallback? onOpenAccount;
+  final VoidCallback? onSaleRecorded;
+  final VoidCallback? onOpenSalesLog;
 
   @override
   State<SalesScreen> createState() => _SalesScreenState();
@@ -74,6 +96,7 @@ class _SalesScreenState extends State<SalesScreen> {
   String _paymentMethod = 'cash';
   ImageSearchMode _preferredPhotoSearchMode = ImageSearchMode.embedded;
   DateTime _soldAt = DateTime.now();
+  _LastSaleSummary? _lastRecordedSale;
 
   @override
   void initState() {
@@ -641,6 +664,20 @@ class _SalesScreenState extends State<SalesScreen> {
       'p_notes': _notesController.text.trim(),
     };
 
+    final saleTotal =
+        double.tryParse(_finalPriceController.text.replaceAll(',', '.')) ??
+        _listedTotal;
+    final recordedSummary = _LastSaleSummary(
+      total: saleTotal,
+      itemCount: _selectedItems.length,
+      location: _location,
+      paymentMethod: _paymentMethod,
+      soldAt: _soldAt,
+      itemNames: _selectedItems
+          .map((item) => item['name']?.toString().trim() ?? 'Termék')
+          .toList(),
+    );
+
     try {
       if (widget.onRecordSale != null) {
         await widget.onRecordSale!(params);
@@ -648,11 +685,13 @@ class _SalesScreenState extends State<SalesScreen> {
         await Supabase.instance.client.rpc('record_sale', params: params);
       }
 
+      widget.onSaleRecorded?.call();
       if (!mounted) return;
       if (Navigator.canPop(context)) {
         _isSaving = false;
         Navigator.pop(context, true);
       } else {
+        _lastRecordedSale = recordedSummary;
         _resetSaleWorkflow();
         _showMessage('Eladás sikeresen rögzítve!');
       }
@@ -801,8 +840,91 @@ class _SalesScreenState extends State<SalesScreen> {
                   ),
                 ],
               ),
+              if (_lastRecordedSale != null) ...[
+                const SizedBox(height: 14),
+                _buildLastSaleCard(_lastRecordedSale!),
+              ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLastSaleCard(_LastSaleSummary sale) {
+    final previewItems = sale.itemNames.take(2).join(', ');
+    final extraCount = sale.itemNames.length - 2;
+    final itemsText = extraCount > 0
+        ? '$previewItems +$extraCount további'
+        : previewItems;
+
+    return Card(
+      color: AppColors.surface,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: AppColors.oliveSoft,
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: const Icon(
+                Icons.receipt_long_outlined,
+                color: AppColors.olive,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Legutóbbi eladás',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.olive,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '· ${AppFormat.salesStoreLabel(sale.location)} · ${AppFormat.paymentMethod(sale.paymentMethod)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.inkMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    itemsText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  Text(
+                    '${AppFormat.forint(sale.total)} · ${sale.itemCount} tétel · ${_formatDateTime(sale.soldAt)}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.inkMuted,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (widget.onOpenSalesLog != null)
+              TextButton(
+                onPressed: widget.onOpenSalesLog,
+                child: const Text('Napló'),
+              ),
+          ],
         ),
       ),
     );

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -18,11 +19,15 @@ class InventoryListScreen extends StatefulWidget {
     this.searchGateway = const SupabaseInventorySearchGateway(),
     this.checkMissingEmbeddings = true,
     this.onOpenAccount,
+    this.refreshListenable,
+    this.onSaleRecorded,
   });
 
   final InventorySearchGateway searchGateway;
   final bool checkMissingEmbeddings;
   final VoidCallback? onOpenAccount;
+  final ValueListenable<int>? refreshListenable;
+  final VoidCallback? onSaleRecorded;
 
   @override
   State<InventoryListScreen> createState() => _InventoryListScreenState();
@@ -49,10 +54,13 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     super.initState();
     _searchController = InventorySearchController(
       onlyUnsold: false,
+      initialSaleStatus: InventorySaleStatusFilter.all,
       allowFallbackOnManualSearch: false,
       imageMaxResults: 100,
       gateway: widget.searchGateway,
     );
+    _searchController.addListener(_onSearchControllerChanged);
+    widget.refreshListenable?.addListener(_onExternalRefresh);
     _searchController.applyFiltersAndSearch();
     if (widget.checkMissingEmbeddings) {
       _refreshMissingEmbeddings();
@@ -63,9 +71,33 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   }
 
   @override
+  void didUpdateWidget(covariant InventoryListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshListenable != widget.refreshListenable) {
+      oldWidget.refreshListenable?.removeListener(_onExternalRefresh);
+      widget.refreshListenable?.addListener(_onExternalRefresh);
+    }
+  }
+
+  @override
   void dispose() {
+    widget.refreshListenable?.removeListener(_onExternalRefresh);
+    _searchController.removeListener(_onSearchControllerChanged);
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onSearchControllerChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _onExternalRefresh() {
+    if (!mounted) return;
+    if (_showingDuplicates) {
+      _checkPossibleDuplicates();
+    } else {
+      _searchController.applyFiltersAndSearch();
+    }
   }
 
   void _selectInventoryMenuAction(String action) {
@@ -391,31 +423,43 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       MaterialPageRoute(builder: (_) => SalesScreen(initialItems: [item])),
     );
     if (recorded == true && mounted) {
+      widget.onSaleRecorded?.call();
       await _refreshCurrentInventoryView();
     }
   }
 
-  Future<void> _updateItem(
-    dynamic id,
-    String name,
-    String brand,
-    double price,
-    String size,
-    String category,
-    String gender,
-    String location,
-    bool isSold,
-  ) async {
+  Future<void> _updateItem({
+    required dynamic id,
+    required String name,
+    required String brand,
+    required double price,
+    required String size,
+    required String category,
+    required List<String> secondaryCategories,
+    required String gender,
+    required String location,
+    required String color,
+    required String pattern,
+    required String condition,
+    required bool isSold,
+  }) async {
     await Supabase.instance.client
         .from('inventory')
         .update({
-          'name': name,
-          'brand': brand,
+          'name': name.trim(),
+          'brand': brand.trim(),
           'price_est': price,
-          'size': size,
+          'size': size.trim(),
           'category': category,
+          'secondary_categories': secondaryCategories
+              .where((c) => c != category)
+              .toSet()
+              .toList(),
           'gender': gender,
           'location': location,
+          'color': color.trim(),
+          'pattern': pattern.trim(),
+          'condition': condition.trim(),
           'is_sold': isSold,
         })
         .eq('id', id);
@@ -482,6 +526,41 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     }
   }
 
+  String _formatMetadataDate(dynamic raw) {
+    final dt = InventorySearch.parseTimestamp(raw)?.toLocal();
+    if (dt == null) return '-';
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${dt.year}.${two(dt.month)}.${two(dt.day)}. ${two(dt.hour)}:${two(dt.minute)}';
+  }
+
+  Widget _metadataRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 118,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.inkMuted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: const TextStyle(fontSize: 12, color: AppColors.ink),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showEditSheet(Map<String, dynamic> item) {
     final nameCtrl = TextEditingController(
       text: item['name']?.toString() ?? '',
@@ -495,6 +574,15 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     final sizeCtrl = TextEditingController(
       text: item['size']?.toString() ?? '',
     );
+    final colorCtrl = TextEditingController(
+      text: item['color']?.toString() ?? '',
+    );
+    final patternCtrl = TextEditingController(
+      text: item['pattern']?.toString() ?? '',
+    );
+    final conditionCtrl = TextEditingController(
+      text: item['condition']?.toString() ?? '',
+    );
 
     bool itemIsSold = item['is_sold'] == true;
     final imageUrl = item['image_url'] as String?;
@@ -504,12 +592,25 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     String selectedCat = editCategories.contains(item['category'])
         ? item['category'].toString()
         : defaultClothingCategory;
+    final secondaryCats =
+        (item['secondary_categories'] as List? ?? const [])
+            .map((e) => e.toString())
+            .where((c) => editCategories.contains(c) && c != selectedCat)
+            .toSet();
     String selectedGender = genderOptions.contains(item['gender'])
         ? item['gender'].toString()
         : defaultClothingGender;
     String selectedLocation = _locations.contains(item['location'])
         ? item['location'].toString()
         : _locations.first;
+
+    final uploaderName = item['uploaded_by_name']?.toString().trim() ?? '';
+    final uploaderEmail = item['uploaded_by_email']?.toString().trim() ?? '';
+    final uploaderDisplay = uploaderName.isNotEmpty
+        ? (uploaderEmail.isNotEmpty && uploaderEmail != uploaderName
+              ? '$uploaderName ($uploaderEmail)'
+              : uploaderName)
+        : (uploaderEmail.isNotEmpty ? uploaderEmail : 'Ismeretlen');
 
     showSafeBottomSheet(
       context: context,
@@ -606,12 +707,18 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 initialValue: selectedCat,
+                isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Kategória'),
                 items: editCategories
                     .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                     .toList(),
                 onChanged: (val) {
-                  if (val != null) setSheetState(() => selectedCat = val);
+                  if (val != null) {
+                    setSheetState(() {
+                      selectedCat = val;
+                      secondaryCats.remove(val);
+                    });
+                  }
                 },
               ),
               const SizedBox(height: 10),
@@ -620,6 +727,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       initialValue: selectedGender,
+                      isExpanded: true,
                       decoration: const InputDecoration(labelText: 'Nem'),
                       items: genderOptions
                           .map(
@@ -640,6 +748,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       initialValue: selectedLocation,
+                      isExpanded: true,
                       decoration: const InputDecoration(labelText: 'Üzlet'),
                       items: _locations
                           .map(
@@ -658,7 +767,87 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: colorCtrl,
+                      decoration: const InputDecoration(labelText: 'Szín'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: patternCtrl,
+                      decoration: const InputDecoration(labelText: 'Minta'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: conditionCtrl,
+                decoration: const InputDecoration(labelText: 'Állapot'),
+              ),
+              const SizedBox(height: 8),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                shape: const Border(),
+                collapsedShape: const Border(),
+                title: const Text(
+                  'További részletek és metaadatok',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Másodlagos kategóriák',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: editCategories
+                        .where((category) => category != selectedCat)
+                        .map(
+                          (category) => FilterChip(
+                            label: Text(category),
+                            selected: secondaryCats.contains(category),
+                            onSelected: (selected) {
+                              setSheetState(() {
+                                if (selected) {
+                                  secondaryCats.add(category);
+                                } else {
+                                  secondaryCats.remove(category);
+                                }
+                              });
+                            },
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const Divider(height: 20),
+                  _metadataRow('Feltöltötte:', uploaderDisplay),
+                  _metadataRow(
+                    'Feltöltés ideje:',
+                    _formatMetadataDate(item['created_at']),
+                  ),
+                  _metadataRow(
+                    'Azonosító:',
+                    item['id']?.toString() ?? '-',
+                  ),
+                  const SizedBox(height: 6),
+                ],
+              ),
+              const SizedBox(height: 16),
               Row(
                 children: [
                   Expanded(
@@ -683,15 +872,19 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                     child: FilledButton.icon(
                       onPressed: () {
                         _updateItem(
-                          item['id'],
-                          nameCtrl.text,
-                          brandCtrl.text,
-                          double.tryParse(priceCtrl.text) ?? 0.0,
-                          sizeCtrl.text,
-                          selectedCat,
-                          selectedGender,
-                          selectedLocation,
-                          itemIsSold,
+                          id: item['id'],
+                          name: nameCtrl.text,
+                          brand: brandCtrl.text,
+                          price: double.tryParse(priceCtrl.text) ?? 0.0,
+                          size: sizeCtrl.text,
+                          category: selectedCat,
+                          secondaryCategories: secondaryCats.toList(),
+                          gender: selectedGender,
+                          location: selectedLocation,
+                          color: colorCtrl.text,
+                          pattern: patternCtrl.text,
+                          condition: conditionCtrl.text,
+                          isSold: itemIsSold,
                         );
                       },
                       icon: const Icon(Icons.save_outlined),
@@ -899,6 +1092,38 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
               controller: _searchController,
               initiallyExpanded: false,
               emptyMessage: 'Nem található termék a megadott szűrőkkel.',
+              topBanner: SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<InventorySaleStatusFilter>(
+                  showSelectedIcon: false,
+                  style: SegmentedButton.styleFrom(
+                    backgroundColor: AppColors.surface,
+                    selectedBackgroundColor: AppColors.terracottaSoft,
+                    selectedForegroundColor: AppColors.terracotta,
+                    foregroundColor: AppColors.inkMuted,
+                    side: const BorderSide(color: AppColors.border),
+                  ),
+                  segments: const [
+                    ButtonSegment(
+                      value: InventorySaleStatusFilter.available,
+                      label: Text('Elérhető'),
+                    ),
+                    ButtonSegment(
+                      value: InventorySaleStatusFilter.sold,
+                      label: Text('Eladva'),
+                    ),
+                    ButtonSegment(
+                      value: InventorySaleStatusFilter.all,
+                      label: Text('Összes'),
+                    ),
+                  ],
+                  selected: {_searchController.saleStatusFilter},
+                  onSelectionChanged: (selection) {
+                    if (selection.isEmpty) return;
+                    _searchController.setSaleStatusFilter(selection.first);
+                  },
+                ),
+              ),
               imageActions: TextButton.icon(
                 onPressed: () => _searchController.clearImage(),
                 icon: const Icon(Icons.close, size: 18),

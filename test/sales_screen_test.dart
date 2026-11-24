@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:yoaron_app/controllers/inventory_search_controller.dart';
 import 'package:yoaron_app/screens/inventory_list_screen.dart';
 import 'package:yoaron_app/screens/sales_screen.dart';
-import 'package:yoaron_app/screens/search_screen.dart';
 import 'package:yoaron_app/services/image_inventory_search.dart';
 import 'package:yoaron_app/services/inventory_search.dart';
 import 'package:yoaron_app/theme/app_theme.dart';
@@ -513,6 +512,8 @@ void main() {
 
         expect(find.text('Fotók kiválasztása'), findsOneWidget);
         expect(find.text('Eladás sikeresen rögzítve!'), findsOneWidget);
+        expect(find.text('Legutóbbi eladás'), findsOneWidget);
+        expect(find.text('Vintage Hoodie'), findsOneWidget);
       },
     );
 
@@ -671,9 +672,37 @@ void main() {
 
   group('Standardized category-based search UI across screens', () {
     testWidgets(
-      'manual search in SalesScreen, InventoryListScreen, and SearchScreen reuse InventorySearchView without image section',
+      'SalesScreen, InventoryListScreen, and InventorySearchView share the same search UI with and without image',
       (tester) async {
         final gateway = _TestGateway();
+        final recordedStatuses = <InventorySaleStatusFilter>[];
+        gateway.onSearchByCriteria = (criteria, sortOption) async {
+          recordedStatuses.add(criteria.effectiveSaleStatus);
+          return ImageInventorySearchResult(
+            aiCriteria: null,
+            criteria: criteria,
+            matches: [
+              {
+                'id': 'manual-1',
+                'name': 'Manual Tee',
+                'brand': 'Nike',
+                'category': 'Póló',
+                'secondary_categories': ['other'],
+                'gender': 'férfi',
+                'price_est': 3500,
+                'size': 'M',
+                'color': 'kék',
+                'pattern': 'sima',
+                'condition': 'jó',
+                'location': 'Csengery',
+                'is_sold': false,
+                'uploaded_by_name': 'Kiss Anna',
+                'created_at': '2026-11-24T10:00:00Z',
+              },
+            ],
+            usedFallback: false,
+          );
+        };
 
         // 1. SalesScreen manual search
         await tester.pumpWidget(_themed(SalesScreen(searchGateway: gateway)));
@@ -687,12 +716,15 @@ void main() {
         expect(find.text('Keresési mód'), findsNothing);
         expect(find.text('Manual Tee'), findsOneWidget);
 
-        // 2. InventoryListScreen
+        // 2. InventoryListScreen with Available/Sold/All toggle, auto-refresh, and full edit sheet
+        final refreshNotifier = ValueNotifier<int>(0);
+        addTearDown(refreshNotifier.dispose);
         await tester.pumpWidget(
           _themed(
             InventoryListScreen(
               searchGateway: gateway,
               checkMissingEmbeddings: false,
+              refreshListenable: refreshNotifier,
             ),
           ),
         );
@@ -702,29 +734,48 @@ void main() {
         expect(find.text('Keresési mód'), findsNothing);
         expect(find.text('Manual Tee'), findsOneWidget);
 
-        // 3. SearchScreen (manual, no image)
-        await tester.pumpWidget(
-          _themed(
-            SearchScreen(
-              key: const ValueKey('search-manual'),
-              searchGateway: gateway,
-            ),
-          ),
-        );
+        // Toggle Available / Sold / All
+        await tester.tap(find.text('Elérhető'));
         await tester.pumpAndSettle();
-        expect(find.byType(InventorySearchView), findsOneWidget);
-        expect(find.text('Szűrők'), findsOneWidget);
-        expect(find.text('Rendezés'), findsOneWidget);
-        expect(find.text('Keresési mód'), findsNothing);
-        expect(find.text('Manual Tee'), findsOneWidget);
+        expect(recordedStatuses.last, InventorySaleStatusFilter.available);
 
-        // 4. SearchScreen with image -> displays image & Keresési mód
+        await tester.tap(find.text('Eladva'));
+        await tester.pumpAndSettle();
+        expect(recordedStatuses.last, InventorySaleStatusFilter.sold);
+
+        // External refresh signal triggers automatic reload.
+        final callsBeforeRefresh = gateway.criteriaCallCount;
+        refreshNotifier.value++;
+        await tester.pumpAndSettle();
+        expect(gateway.criteriaCallCount, greaterThan(callsBeforeRefresh));
+
+        // Opening edit sheet shows color/pattern/condition and expandable metadata.
+        await tester.tap(find.text('Manual Tee'));
+        await tester.pumpAndSettle();
+        expect(find.text('Termék szerkesztése'), findsOneWidget);
+        expect(find.text('Szín'), findsOneWidget);
+        expect(find.text('Minta'), findsOneWidget);
+        expect(find.text('Állapot'), findsOneWidget);
+
+        final moreDetails = find.text('További részletek és metaadatok');
+        await tester.ensureVisible(moreDetails);
+        await tester.tap(moreDetails);
+        await tester.pumpAndSettle();
+        expect(find.text('Kiss Anna'), findsOneWidget);
+
+        // 3. InventorySearchView with image -> displays image, zoom, and fold toggle
+        final imageController = InventorySearchController(
+          initialImage: _testPhoto('search-img'),
+          gateway: gateway,
+        );
+        addTearDown(imageController.dispose);
+        unawaited(imageController.analyzeImage());
         await tester.pumpWidget(
-          _themed(
-            SearchScreen(
-              key: const ValueKey('search-with-image'),
-              searchGateway: gateway,
-              initialImage: _testPhoto('search-img'),
+          MaterialApp(
+            key: const ValueKey('image-search-app'),
+            theme: AppTheme.light(),
+            home: Scaffold(
+              body: InventorySearchView(controller: imageController),
             ),
           ),
         );
@@ -732,7 +783,6 @@ void main() {
         expect(find.byType(InventorySearchView), findsOneWidget);
         expect(find.text('Keresési mód'), findsOneWidget);
 
-        // Tapping thumbnail opens full-screen InteractiveViewer dialog.
         await tester.tap(find.byIcon(Icons.zoom_in));
         await tester.pumpAndSettle();
         expect(find.byType(InteractiveViewer), findsOneWidget);
@@ -740,13 +790,11 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byType(InteractiveViewer), findsNothing);
 
-        // Folding photo section hides thumbnail & method dropdown.
         await tester.tap(find.byKey(const ValueKey('toggle-image-section')));
         await tester.pumpAndSettle();
         expect(find.text('Keresési mód'), findsNothing);
         expect(find.text('Mutat'), findsOneWidget);
 
-        // Expanding it restores photo section.
         await tester.tap(find.byKey(const ValueKey('toggle-image-section')));
         await tester.pumpAndSettle();
         expect(find.text('Keresési mód'), findsOneWidget);
