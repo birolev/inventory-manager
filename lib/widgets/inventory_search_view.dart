@@ -198,6 +198,7 @@ class _InventorySearchViewState extends State<InventorySearchView> {
   }
 
   Widget _buildImageSection(InventorySearchController controller) {
+    final p = context.palette;
     final isGemini = controller.searchMode == ImageSearchMode.gemini;
     final bytes = controller.imageBytes;
     return Column(
@@ -210,10 +211,7 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                 isGemini
                     ? 'Fotós keresés (Gemini AI)'
                     : 'Fotós keresés (Vizuális)',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.ink,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w700, color: p.ink),
               ),
             ),
             TextButton.icon(
@@ -270,7 +268,7 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                   width: 88,
                   height: 108,
                   decoration: BoxDecoration(
-                    color: AppColors.surfaceMuted,
+                    color: p.surfaceMuted,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Center(child: CircularProgressIndicator()),
@@ -285,12 +283,12 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                         isGemini
                             ? 'Fotó elemzése Gemini-vel…'
                             : 'Hasonló ruhák keresése…',
-                        style: const TextStyle(color: AppColors.inkMuted),
+                        style: TextStyle(color: p.inkMuted),
                       )
                     else if (controller.error != null)
                       Text(
                         controller.error!,
-                        style: const TextStyle(color: AppColors.brick),
+                        style: TextStyle(color: p.brick),
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                       )
@@ -351,6 +349,7 @@ class _InventorySearchViewState extends State<InventorySearchView> {
   }
 
   Widget _buildItemCard(Map<String, dynamic> item) {
+    final p = context.palette;
     final selected = widget.isItemSelected?.call(item) ?? false;
     final disabled = widget.isItemDisabled?.call(item) ?? false;
     final overlay = widget.itemOverlayBuilder?.call(context, item);
@@ -362,11 +361,11 @@ class _InventorySearchViewState extends State<InventorySearchView> {
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      color: selected ? AppColors.oliveSoft : AppColors.surface,
+      color: selected ? p.oliveSoft : p.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(
-          color: selected ? AppColors.olive : AppColors.border,
+          color: selected ? p.olive : p.border,
           width: selected ? 2 : 1,
         ),
       ),
@@ -382,22 +381,21 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                 fit: StackFit.expand,
                 children: [
                   ColoredBox(
-                    color: AppColors.surfaceMuted,
+                    color: p.surfaceMuted,
                     child: imageUrl == null || imageUrl.isEmpty
-                        ? const Icon(
+                        ? Icon(
                             Icons.checkroom_outlined,
-                            color: AppColors.inkMuted,
+                            color: p.inkMuted,
                             size: 32,
                           )
                         : CachedRemoteImage(
                             imageUrl,
                             fit: BoxFit.cover,
                             thumbnail: true,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const Icon(
-                                  Icons.broken_image_outlined,
-                                  color: AppColors.inkMuted,
-                                ),
+                            errorBuilder: (context, error, stackTrace) => Icon(
+                              Icons.broken_image_outlined,
+                              color: p.inkMuted,
+                            ),
                           ),
                   ),
                   if (location.isNotEmpty || size.isNotEmpty)
@@ -413,14 +411,14 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                       ),
                     ),
                   if (selected)
-                    const Align(
+                    Align(
                       alignment: Alignment.topRight,
                       child: Padding(
-                        padding: EdgeInsets.all(8),
+                        padding: const EdgeInsets.all(8),
                         child: CircleAvatar(
                           radius: 15,
-                          backgroundColor: AppColors.olive,
-                          child: Icon(
+                          backgroundColor: p.olive,
+                          child: const Icon(
                             Icons.check,
                             color: Colors.white,
                             size: 18,
@@ -442,21 +440,21 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                       brand.toUpperCase(),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 10,
                         letterSpacing: 0.6,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.inkMuted,
+                        color: p.inkMuted,
                       ),
                     ),
                   Text(
                     item['name']?.toString() ?? 'Ismeretlen termék',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 14,
-                      color: AppColors.ink,
+                      color: p.ink,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -464,19 +462,16 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                     '${item['category'] ?? '-'} · ${item['gender'] ?? '-'}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.inkMuted,
-                    ),
+                    style: TextStyle(fontSize: 12, color: p.inkMuted),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     AppFormat.forint(price),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 15,
-                      color: AppColors.ink,
-                      fontFeatures: [FontFeature.tabularFigures()],
+                      color: p.ink,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ],
@@ -490,6 +485,7 @@ class _InventorySearchViewState extends State<InventorySearchView> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final controller = widget.controller;
     final isGeminiImage =
         controller.hasImage && controller.searchMode == ImageSearchMode.gemini;
@@ -544,9 +540,9 @@ class _InventorySearchViewState extends State<InventorySearchView> {
         );
 
         final topPanelContent = DecoratedBox(
-          decoration: const BoxDecoration(
-            color: AppColors.surface,
-            border: Border(bottom: BorderSide(color: AppColors.border)),
+          decoration: BoxDecoration(
+            color: p.surface,
+            border: Border(bottom: BorderSide(color: p.border)),
           ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
@@ -560,12 +556,12 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                 if (controller.hasImage) _buildImageSection(controller),
                 Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Text(
                         'Szűrők',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          color: AppColors.ink,
+                          color: p.ink,
                         ),
                       ),
                     ),
@@ -737,9 +733,9 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                     tilePadding: EdgeInsets.zero,
                     shape: const Border(),
                     collapsedShape: const Border(),
-                    title: const Text(
+                    title: Text(
                       'További szűrők: név, márka, állapot',
-                      style: TextStyle(fontSize: 13, color: AppColors.inkMuted),
+                      style: TextStyle(fontSize: 13, color: p.inkMuted),
                     ),
                     children: [
                       _buildFilterTextField(
@@ -766,21 +762,21 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                 if (!controller.isLoading &&
                     controller.usedFallback &&
                     controller.results.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 6),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
                     child: Text(
                       'A bővített keresés sem talált egyezést (kategória, üzlet és márka alapján).',
-                      style: TextStyle(fontSize: 12, color: AppColors.ochre),
+                      style: TextStyle(fontSize: 12, color: p.ochre),
                     ),
                   ),
                 if (!controller.isLoading &&
                     controller.results.isNotEmpty &&
                     controller.usedFallback)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 6),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
                     child: Text(
                       'Nincs pontos egyezés — bővített találatok kategória, üzlet és márka alapján.',
-                      style: TextStyle(fontSize: 12, color: AppColors.ochre),
+                      style: TextStyle(fontSize: 12, color: p.ochre),
                     ),
                   ),
                 Padding(
@@ -791,10 +787,7 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                     '${currentSort.shortDescription}',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.inkMuted,
-                    ),
+                    style: TextStyle(fontSize: 12, color: p.inkMuted),
                   ),
                 ),
               ],
@@ -819,16 +812,12 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
-                          Icons.error_outline,
-                          size: 40,
-                          color: AppColors.brick,
-                        ),
+                        Icon(Icons.error_outline, size: 40, color: p.brick),
                         const SizedBox(height: 10),
                         Text(
                           controller.error!,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppColors.brick),
+                          style: TextStyle(color: p.brick),
                         ),
                         const SizedBox(height: 14),
                         FilledButton.tonalIcon(
@@ -855,16 +844,16 @@ class _InventorySearchViewState extends State<InventorySearchView> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.checkroom_outlined,
                           size: 44,
-                          color: AppColors.borderStrong,
+                          color: p.borderStrong,
                         ),
                         const SizedBox(height: 10),
                         Text(
                           widget.emptyMessage,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppColors.inkMuted),
+                          style: TextStyle(color: p.inkMuted),
                         ),
                       ],
                     ),
@@ -912,9 +901,9 @@ class _InventorySearchViewState extends State<InventorySearchView> {
               ),
             if (widget.bottomBar != null)
               DecoratedBox(
-                decoration: const BoxDecoration(
-                  color: AppColors.surface,
-                  border: Border(top: BorderSide(color: AppColors.border)),
+                decoration: BoxDecoration(
+                  color: p.surface,
+                  border: Border(top: BorderSide(color: p.border)),
                 ),
                 child: SafeArea(
                   top: false,

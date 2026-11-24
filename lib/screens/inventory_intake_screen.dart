@@ -597,6 +597,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final bool hasQueue = _queue != null && _queue!.hasNext;
     final QueueItem? currentItem = hasQueue ? _queue!.current : null;
     final readyCount = hasQueue
@@ -610,11 +611,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
           if (hasQueue && !_isUploading)
             TextButton.icon(
               onPressed: _confirmCancelEntireBatch,
-              icon: const Icon(Icons.close, size: 18, color: AppColors.brick),
-              label: const Text(
-                'Megszakítás',
-                style: TextStyle(color: AppColors.brick),
-              ),
+              icon: Icon(Icons.close, size: 18, color: p.brick),
+              label: Text('Megszakítás', style: TextStyle(color: p.brick)),
             ),
           if (widget.onOpenAccount != null)
             IconButton(
@@ -641,15 +639,15 @@ class _InventoryScreenState extends State<InventoryScreen> {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: AppColors.terracottaSoft,
+                          color: p.accentSoft,
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
                           '${_queue!.currentNumber} / ${_queue!.total} termék',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 12,
-                            color: AppColors.terracotta,
+                            color: p.accent,
                           ),
                         ),
                       ),
@@ -667,8 +665,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
                       value: _queue!.currentNumber / _queue!.total,
-                      backgroundColor: AppColors.border,
-                      color: AppColors.terracotta,
+                      backgroundColor: p.border,
+                      color: p.accent,
                       minHeight: 6,
                     ),
                   ),
@@ -686,13 +684,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
                               width: 60,
                               height: 60,
                               decoration: BoxDecoration(
-                                color: AppColors.terracottaSoft,
+                                color: p.accentSoft,
                                 borderRadius: BorderRadius.circular(16),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.add_a_photo_outlined,
                                 size: 30,
-                                color: AppColors.terracotta,
+                                color: p.accent,
                               ),
                             ),
                           ),
@@ -728,20 +726,20 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   Container(
                     height: 280,
                     decoration: BoxDecoration(
-                      color: AppColors.surfaceMuted,
+                      color: p.surfaceMuted,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.border),
+                      border: Border.all(color: p.border),
                     ),
                     child: currentItem != null
                         ? FutureBuilder<Uint8List>(
                             future: currentItem.bytes,
                             builder: (context, snapshot) {
                               if (snapshot.hasError) {
-                                return const Center(
+                                return Center(
                                   child: Icon(
                                     Icons.broken_image_outlined,
                                     size: 54,
-                                    color: AppColors.inkMuted,
+                                    color: p.inkMuted,
                                   ),
                                 );
                               }

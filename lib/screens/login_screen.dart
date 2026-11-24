@@ -48,12 +48,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: AppColors.brick),
+      SnackBar(content: Text(message), backgroundColor: context.palette.brick),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Scaffold(
       body: Center(
         child: SingleChildScrollView(
@@ -72,14 +73,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         width: 56,
                         height: 56,
                         decoration: BoxDecoration(
-                          color: AppColors.ink,
+                          color: p.primaryAction,
                           borderRadius: BorderRadius.circular(14),
                         ),
-                        child: const Center(
+                        child: Center(
                           child: Text(
                             'Y',
                             style: TextStyle(
-                              color: Colors.white,
+                              color: p.onPrimaryAction,
                               fontSize: 28,
                               fontWeight: FontWeight.w800,
                             ),

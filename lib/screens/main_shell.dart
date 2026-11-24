@@ -56,6 +56,7 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final pages = <Widget>[
       SalesScreen(
         onOpenAccount: _openAccount,
@@ -100,14 +101,14 @@ class _MainShellState extends State<MainShell> {
                           width: 36,
                           height: 36,
                           decoration: BoxDecoration(
-                            color: AppColors.ink,
+                            color: p.primaryAction,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Center(
+                          child: Center(
                             child: Text(
                               'Y',
                               style: TextStyle(
-                                color: Colors.white,
+                                color: p.onPrimaryAction,
                                 fontWeight: FontWeight.w800,
                                 fontSize: 18,
                               ),
@@ -116,13 +117,13 @@ class _MainShellState extends State<MainShell> {
                         ),
                         if (extendedRail) ...[
                           const SizedBox(width: 10),
-                          const Text(
+                          Text(
                             'YOARON',
                             style: TextStyle(
                               fontWeight: FontWeight.w800,
                               letterSpacing: 1.4,
                               fontSize: 15,
-                              color: AppColors.ink,
+                              color: p.ink,
                             ),
                           ),
                         ],
@@ -183,8 +184,8 @@ class _MainShellState extends State<MainShell> {
         return Scaffold(
           body: IndexedStack(index: _selectedIndex, children: pages),
           bottomNavigationBar: DecoratedBox(
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: AppColors.border)),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: p.border)),
             ),
             child: NavigationBar(
               selectedIndex: _selectedIndex,

@@ -84,6 +84,7 @@ class _TeamStatsScreenState extends State<TeamStatsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final sorted = _sortedMembers;
     final totalRevenue = sorted.fold<double>(
       0,
@@ -118,11 +119,7 @@ class _TeamStatsScreenState extends State<TeamStatsScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
-                      Icons.lock_outline,
-                      size: 42,
-                      color: AppColors.brick,
-                    ),
+                    Icon(Icons.lock_outline, size: 42, color: p.brick),
                     const SizedBox(height: 12),
                     const Text(
                       'A csapat statisztikák csak manager és admin jogosultsággal érhetők el.',
@@ -161,11 +158,11 @@ class _TeamStatsScreenState extends State<TeamStatsScreen> {
                       SegmentedButton<_TeamStatsSort>(
                         showSelectedIcon: false,
                         style: SegmentedButton.styleFrom(
-                          backgroundColor: AppColors.surface,
-                          selectedBackgroundColor: AppColors.terracottaSoft,
-                          selectedForegroundColor: AppColors.terracotta,
-                          foregroundColor: AppColors.inkMuted,
-                          side: const BorderSide(color: AppColors.border),
+                          backgroundColor: p.surface,
+                          selectedBackgroundColor: p.accentSoft,
+                          selectedForegroundColor: p.accent,
+                          foregroundColor: p.inkMuted,
+                          side: BorderSide(color: p.border),
                         ),
                         segments: const [
                           ButtonSegment(
@@ -189,12 +186,12 @@ class _TeamStatsScreenState extends State<TeamStatsScreen> {
                       ),
                       const SizedBox(height: 14),
                       if (sorted.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 40),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 40),
                           child: Text(
                             'Még nincs megjeleníthető munkatársi statisztika.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: AppColors.inkMuted),
+                            style: TextStyle(color: p.inkMuted),
                           ),
                         )
                       else
@@ -228,6 +225,7 @@ class _TeamSummaryStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 560;
@@ -236,22 +234,22 @@ class _TeamSummaryStrip extends StatelessWidget {
             label: 'Csapat bevétel',
             value: totalRevenue,
             icon: Icons.payments_outlined,
-            accent: AppColors.olive,
-            tint: AppColors.oliveSoft,
+            accent: p.olive,
+            tint: p.oliveSoft,
           ),
           _SummaryBox(
             label: 'Eladások',
             value: totalSalesCount,
             icon: Icons.receipt_long_outlined,
-            accent: AppColors.terracotta,
-            tint: AppColors.terracottaSoft,
+            accent: p.accent,
+            tint: p.accentSoft,
           ),
           _SummaryBox(
             label: 'Feltöltések',
             value: totalUploads,
             icon: Icons.checkroom_outlined,
-            accent: AppColors.ink,
-            tint: AppColors.surfaceMuted,
+            accent: p.ink,
+            tint: p.surfaceMuted,
           ),
         ];
 
@@ -353,6 +351,7 @@ class _EmployeeStatsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final isPrivileged = member.isAdmin || member.isManager;
     return Card(
       child: Padding(
@@ -364,8 +363,8 @@ class _EmployeeStatsCard extends StatelessWidget {
               children: [
                 CircleAvatar(
                   radius: 22,
-                  backgroundColor: AppColors.terracottaSoft,
-                  foregroundColor: AppColors.terracotta,
+                  backgroundColor: p.accentSoft,
+                  foregroundColor: p.accent,
                   child: Text(
                     initials,
                     style: const TextStyle(fontWeight: FontWeight.w700),
@@ -398,9 +397,7 @@ class _EmployeeStatsCard extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: isPrivileged
-                        ? AppColors.terracottaSoft
-                        : AppColors.surfaceMuted,
+                    color: isPrivileged ? p.accentSoft : p.surfaceMuted,
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -408,9 +405,7 @@ class _EmployeeStatsCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: isPrivileged
-                          ? AppColors.terracotta
-                          : AppColors.inkMuted,
+                      color: isPrivileged ? p.accent : p.inkMuted,
                     ),
                   ),
                 ),
@@ -425,7 +420,7 @@ class _EmployeeStatsCard extends StatelessWidget {
                     value: AppFormat.forint(member.totalSalesRevenue),
                     detail:
                         '${member.salesCount} eladás · ${member.soldItemsCount} db',
-                    valueColor: AppColors.olive,
+                    valueColor: p.olive,
                   ),
                 ),
                 Expanded(
@@ -470,6 +465,7 @@ class _MetricColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final alignment = alignEnd
         ? CrossAxisAlignment.end
         : CrossAxisAlignment.start;
@@ -485,7 +481,7 @@ class _MetricColumn extends StatelessWidget {
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
-            color: valueColor ?? AppColors.ink,
+            color: valueColor ?? p.ink,
             fontFeatures: const [FontFeature.tabularFigures()],
           ),
         ),
@@ -494,7 +490,7 @@ class _MetricColumn extends StatelessWidget {
           detail,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
+          style: TextStyle(fontSize: 11, color: p.inkMuted),
         ),
       ],
     );

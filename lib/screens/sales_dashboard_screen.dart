@@ -341,11 +341,11 @@ class _SalesDashboardScreenState extends State<SalesDashboardScreen> {
                   SegmentedButton<SalesStoreFilter>(
                     showSelectedIcon: false,
                     style: SegmentedButton.styleFrom(
-                      backgroundColor: AppColors.surface,
-                      selectedBackgroundColor: AppColors.terracottaSoft,
-                      selectedForegroundColor: AppColors.terracotta,
-                      foregroundColor: AppColors.inkMuted,
-                      side: const BorderSide(color: AppColors.border),
+                      backgroundColor: context.palette.surface,
+                      selectedBackgroundColor: context.palette.accentSoft,
+                      selectedForegroundColor: context.palette.accent,
+                      foregroundColor: context.palette.inkMuted,
+                      side: BorderSide(color: context.palette.border),
                     ),
                     segments: const [
                       ButtonSegment(
@@ -831,6 +831,7 @@ class _MonthStats extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 600;
@@ -839,22 +840,22 @@ class _MonthStats extends StatelessWidget {
             label: '$monthLabel bevétel',
             value: revenue,
             icon: Icons.payments_outlined,
-            accentColor: AppColors.olive,
-            tintColor: AppColors.oliveSoft,
+            accentColor: p.olive,
+            tintColor: p.oliveSoft,
           ),
           _StatCard(
             label: 'Eladások',
             value: '$saleCount db',
             icon: Icons.receipt_long_outlined,
-            accentColor: AppColors.terracotta,
-            tintColor: AppColors.terracottaSoft,
+            accentColor: p.accent,
+            tintColor: p.accentSoft,
           ),
           _StatCard(
             label: 'Eladott ruhák',
             value: '$itemCount db',
             icon: Icons.checkroom_outlined,
-            accentColor: AppColors.ink,
-            tintColor: AppColors.surfaceMuted,
+            accentColor: p.ink,
+            tintColor: p.surfaceMuted,
           ),
         ];
 
@@ -1049,6 +1050,7 @@ class _CalendarPanel extends StatelessWidget {
                 final day = index - offset + 1;
                 if (day < 1 || day > daysInMonth) return const SizedBox();
 
+                final p = context.palette;
                 final date = DateTime(month.year, month.month, day);
                 final summary = summaryFor(date);
                 final saleCount = summary['count'] as int;
@@ -1056,11 +1058,11 @@ class _CalendarPanel extends StatelessWidget {
                 final selected = dateKey(date) == dateKey(selectedDate);
                 final today = dateKey(date) == dateKey(DateTime.now());
                 final background = selected
-                    ? AppColors.terracotta
+                    ? p.accent
                     : saleCount > 0
-                    ? AppColors.terracottaSoft
+                    ? p.accentSoft
                     : Colors.transparent;
-                final foreground = selected ? Colors.white : AppColors.ink;
+                final foreground = selected ? Colors.white : p.ink;
 
                 return Material(
                   color: background,
@@ -1072,7 +1074,7 @@ class _CalendarPanel extends StatelessWidget {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(10),
                         border: today && !selected
-                            ? Border.all(color: AppColors.terracotta, width: 1.4)
+                            ? Border.all(color: p.accent, width: 1.4)
                             : null,
                       ),
                       child: Column(
@@ -1098,7 +1100,7 @@ class _CalendarPanel extends StatelessWidget {
                               style: TextStyle(
                                 color: selected
                                     ? Colors.white.withValues(alpha: 0.92)
-                                    : AppColors.terracotta,
+                                    : p.accent,
                                 fontSize: 10,
                                 fontWeight: FontWeight.w600,
                                 fontFeatures: const [
@@ -1215,8 +1217,8 @@ class _DailySalesPanel extends StatelessWidget {
                   collapsedShape: const Border(),
                   childrenPadding: const EdgeInsets.only(bottom: 10),
                   leading: CircleAvatar(
-                    backgroundColor: AppColors.surfaceMuted,
-                    foregroundColor: AppColors.ink,
+                    backgroundColor: context.palette.surfaceMuted,
+                    foregroundColor: context.palette.ink,
                     child: const Icon(Icons.receipt_long_outlined, size: 20),
                   ),
                   title: Row(
@@ -1233,7 +1235,7 @@ class _DailySalesPanel extends StatelessWidget {
                       Text(
                         money(saleTotal(sale)),
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: AppColors.olive,
+                          color: context.palette.olive,
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
@@ -1241,9 +1243,9 @@ class _DailySalesPanel extends StatelessWidget {
                   ),
                   subtitle: Text(
                     '${AppFormat.salesStoreLabel(sale['location']?.toString())} · $paymentLabel · $recorder',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: AppColors.inkMuted,
+                      color: context.palette.inkMuted,
                     ),
                   ),
                   children: [
@@ -1327,19 +1329,20 @@ class _DailySalesPanel extends StatelessWidget {
   }
 
   Widget _saleItemThumbnail(BuildContext context, dynamic item) {
+    final p = context.palette;
     final imageUrl = _saleItemImageUrl(item);
     if (imageUrl == null) {
       return Container(
         width: 46,
         height: 46,
         decoration: BoxDecoration(
-          color: AppColors.surfaceMuted,
+          color: p.surfaceMuted,
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Icon(
+        child: Icon(
           Icons.checkroom_outlined,
           size: 20,
-          color: AppColors.inkMuted,
+          color: p.inkMuted,
         ),
       );
     }
@@ -1446,12 +1449,15 @@ class _InlineError extends StatelessWidget {
   final String message;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: AppColors.brickSoft,
-    borderRadius: BorderRadius.circular(10),
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Text(message, style: const TextStyle(color: AppColors.brick)),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Material(
+      color: p.brickSoft,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Text(message, style: TextStyle(color: p.brick)),
+      ),
+    );
+  }
 }

@@ -3,6 +3,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
+import 'theme/app_theme.dart';
 
 const _authDiagnosticsEnabled = bool.fromEnvironment(
   'AUTH_DIAGNOSTICS',
@@ -97,5 +98,6 @@ void main() async {
     });
   }
 
+  await AppThemeController.instance.load();
   runApp(YoaronApp(openedFromInvite: openedFromInvite));
 }

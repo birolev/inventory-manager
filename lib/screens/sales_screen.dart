@@ -761,6 +761,7 @@ class _SalesScreenState extends State<SalesScreen> {
   }
 
   Widget _buildPhotoPicker() {
+    final p = context.palette;
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -780,13 +781,13 @@ class _SalesScreenState extends State<SalesScreen> {
                           width: 60,
                           height: 60,
                           decoration: BoxDecoration(
-                            color: AppColors.terracottaSoft,
+                            color: p.accentSoft,
                             borderRadius: BorderRadius.circular(16),
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.photo_camera_outlined,
                             size: 30,
-                            color: AppColors.terracotta,
+                            color: p.accent,
                           ),
                         ),
                       ),
@@ -852,6 +853,7 @@ class _SalesScreenState extends State<SalesScreen> {
   }
 
   Widget _buildLastSaleCard(_LastSaleSummary sale) {
+    final p = context.palette;
     final previewItems = sale.itemNames.take(2).join(', ');
     final extraCount = sale.itemNames.length - 2;
     final itemsText = extraCount > 0
@@ -859,7 +861,7 @@ class _SalesScreenState extends State<SalesScreen> {
         : previewItems;
 
     return Card(
-      color: AppColors.surface,
+      color: p.surface,
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Row(
@@ -868,13 +870,10 @@ class _SalesScreenState extends State<SalesScreen> {
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: AppColors.oliveSoft,
+                color: p.oliveSoft,
                 borderRadius: BorderRadius.circular(11),
               ),
-              child: const Icon(
-                Icons.receipt_long_outlined,
-                color: AppColors.olive,
-              ),
+              child: Icon(Icons.receipt_long_outlined, color: p.olive),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -883,20 +882,21 @@ class _SalesScreenState extends State<SalesScreen> {
                 children: [
                   Row(
                     children: [
-                      const Text(
+                      Text(
                         'Legutóbbi eladás',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          color: AppColors.olive,
+                          color: p.olive,
                         ),
                       ),
                       const SizedBox(width: 6),
-                      Text(
-                        '· ${AppFormat.salesStoreLabel(sale.location)} · ${AppFormat.paymentMethod(sale.paymentMethod)}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.inkMuted,
+                      Flexible(
+                        child: Text(
+                          '· ${AppFormat.salesStoreLabel(sale.location)} · ${AppFormat.paymentMethod(sale.paymentMethod)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: p.inkMuted),
                         ),
                       ),
                     ],
@@ -910,10 +910,10 @@ class _SalesScreenState extends State<SalesScreen> {
                   ),
                   Text(
                     '${AppFormat.forint(sale.total)} · ${sale.itemCount} tétel · ${_formatDateTime(sale.soldAt)}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: AppColors.inkMuted,
-                      fontFeatures: [FontFeature.tabularFigures()],
+                      color: p.inkMuted,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ],
@@ -931,6 +931,7 @@ class _SalesScreenState extends State<SalesScreen> {
   }
 
   Widget _buildAddOptions() {
+    final p = context.palette;
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 640),
@@ -941,7 +942,7 @@ class _SalesScreenState extends State<SalesScreen> {
                 padding: const EdgeInsets.all(16),
                 children: [
                   Card(
-                    color: AppColors.surfaceMuted,
+                    color: p.surfaceMuted,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -962,7 +963,7 @@ class _SalesScreenState extends State<SalesScreen> {
                             AppFormat.forint(_listedTotal),
                             style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(
-                                  color: AppColors.terracotta,
+                                  color: p.accent,
                                   fontFeatures: const [
                                     FontFeature.tabularFigures(),
                                   ],
@@ -974,12 +975,12 @@ class _SalesScreenState extends State<SalesScreen> {
                   ),
                   const SizedBox(height: 12),
                   if (_selectedItems.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 28),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 28),
                       child: Text(
                         'Még nincs tétel a kosárban.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: AppColors.inkMuted),
+                        style: TextStyle(color: p.inkMuted),
                       ),
                     )
                   else
@@ -990,9 +991,9 @@ class _SalesScreenState extends State<SalesScreen> {
                   const SizedBox(height: 12),
                   Text(
                     'További tétel hozzáadása',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: AppColors.inkMuted,
-                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.titleSmall?.copyWith(color: p.inkMuted),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
@@ -1028,9 +1029,9 @@ class _SalesScreenState extends State<SalesScreen> {
               ),
             ),
             DecoratedBox(
-              decoration: const BoxDecoration(
-                color: AppColors.surface,
-                border: Border(top: BorderSide(color: AppColors.border)),
+              decoration: BoxDecoration(
+                color: p.surface,
+                border: Border(top: BorderSide(color: p.border)),
               ),
               child: SafeArea(
                 top: false,
@@ -1041,7 +1042,8 @@ class _SalesScreenState extends State<SalesScreen> {
                     child: FilledButton.icon(
                       onPressed: _selectedItems.isEmpty ? null : _openCheckout,
                       style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.olive,
+                        backgroundColor: p.olive,
+                        foregroundColor: Colors.white,
                       ),
                       icon: const Icon(Icons.arrow_forward),
                       label: const Text('Tovább a véglegesítéshez'),
@@ -1106,25 +1108,25 @@ class _SalesScreenState extends State<SalesScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: AppColors.terracottaSoft,
+              color: context.palette.accentSoft,
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
               'Fotó ${_currentPhotoIndex + 1} / ${_photos.length}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 12,
-                color: AppColors.terracotta,
+                color: context.palette.accent,
               ),
             ),
           ),
           const SizedBox(width: 8),
           Text(
             '${_selectedItems.length} párosítva',
-            style: const TextStyle(
+            style: TextStyle(
               fontWeight: FontWeight.w600,
               fontSize: 13,
-              color: AppColors.inkMuted,
+              color: context.palette.inkMuted,
             ),
           ),
         ],
@@ -1397,6 +1399,7 @@ class _SalesScreenState extends State<SalesScreen> {
   }
 
   Widget _buildSaleItemTile(Map<String, dynamic> item) {
+    final p = context.palette;
     final imageUrl = item['image_url']?.toString();
     return Card(
       child: ListTile(
@@ -1406,12 +1409,9 @@ class _SalesScreenState extends State<SalesScreen> {
             width: 48,
             height: 48,
             child: imageUrl == null || imageUrl.isEmpty
-                ? const ColoredBox(
-                    color: AppColors.surfaceMuted,
-                    child: Icon(
-                      Icons.checkroom_outlined,
-                      color: AppColors.inkMuted,
-                    ),
+                ? ColoredBox(
+                    color: p.surfaceMuted,
+                    child: Icon(Icons.checkroom_outlined, color: p.inkMuted),
                   )
                 : CachedRemoteImage(
                     imageUrl,
@@ -1433,19 +1433,20 @@ class _SalesScreenState extends State<SalesScreen> {
         trailing: IconButton(
           tooltip: 'Eltávolítás',
           onPressed: () => _removeItem(item),
-          icon: const Icon(Icons.close, color: AppColors.inkMuted),
+          icon: Icon(Icons.close, color: p.inkMuted),
         ),
       ),
     );
   }
 
   Widget _summaryRow(String label, double amount, {String suffix = ' Ft'}) {
+    final p = context.palette;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: AppColors.inkMuted)),
+          Text(label, style: TextStyle(color: p.inkMuted)),
           Text(
             '${AppFormat.amount(amount)}$suffix',
             style: const TextStyle(
@@ -1474,6 +1475,7 @@ class _QuickActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -1483,7 +1485,7 @@ class _QuickActionCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, color: AppColors.terracotta, size: 24),
+              Icon(icon, color: p.accent, size: 24),
               const SizedBox(height: 10),
               Text(title, style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 2),

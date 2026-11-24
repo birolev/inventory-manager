@@ -374,6 +374,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
               (value) => value != null && value.toString().trim().isNotEmpty,
             )
             .join(' · ');
+    final p = context.palette;
     return ListTile(
       onTap: () => _showEditSheet(item),
       leading: ClipRRect(
@@ -382,11 +383,11 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
           width: 56,
           height: 56,
           child: imageUrl.isEmpty
-              ? const ColoredBox(
-                  color: AppColors.surfaceMuted,
+              ? ColoredBox(
+                  color: p.surfaceMuted,
                   child: Icon(
                     Icons.checkroom_outlined,
-                    color: AppColors.inkMuted,
+                    color: p.inkMuted,
                   ),
                 )
               : CachedRemoteImage(imageUrl, fit: BoxFit.cover, thumbnail: true),
@@ -402,13 +403,13 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       trailing: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: isSold ? AppColors.brickSoft : AppColors.oliveSoft,
+          color: isSold ? p.brickSoft : p.oliveSoft,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(
           isSold ? 'ELADVA' : 'ELÉRHETŐ',
           style: TextStyle(
-            color: isSold ? AppColors.brick : AppColors.olive,
+            color: isSold ? p.brick : p.olive,
             fontSize: 10,
             fontWeight: FontWeight.w700,
           ),
@@ -543,9 +544,9 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
             width: 118,
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: AppColors.inkMuted,
+                color: context.palette.inkMuted,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -553,7 +554,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
           Expanded(
             child: SelectableText(
               value,
-              style: const TextStyle(fontSize: 12, color: AppColors.ink),
+              style: TextStyle(fontSize: 12, color: context.palette.ink),
             ),
           ),
         ],
@@ -616,6 +617,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       context: context,
       child: StatefulBuilder(
         builder: (context, setSheetState) {
+          final p = context.palette;
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -628,7 +630,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                     child: Container(
                       height: 260,
                       width: double.infinity,
-                      color: AppColors.surfaceMuted,
+                      color: p.surfaceMuted,
                       child: CachedRemoteImage(
                         imageUrl,
                         fit: BoxFit.contain,
@@ -636,14 +638,13 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                             progress == null
                             ? child
                             : const Center(child: CircularProgressIndicator()),
-                        errorBuilder: (context, error, stackTrace) =>
-                            const Center(
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                size: 48,
-                                color: AppColors.inkMuted,
-                              ),
-                            ),
+                        errorBuilder: (context, error, stackTrace) => Center(
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            size: 48,
+                            color: p.inkMuted,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -656,16 +657,16 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
               ),
               const SizedBox(height: 10),
               Card(
-                color: itemIsSold ? AppColors.brickSoft : AppColors.oliveSoft,
+                color: itemIsSold ? p.brickSoft : p.oliveSoft,
                 child: SwitchListTile(
                   title: Text(
                     itemIsSold ? 'Eladva' : 'Elérhető készleten',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: itemIsSold ? AppColors.brick : AppColors.olive,
+                      color: itemIsSold ? p.brick : p.olive,
                     ),
                   ),
-                  activeThumbColor: AppColors.brick,
+                  activeThumbColor: p.brick,
                   value: itemIsSold,
                   onChanged: (bool val) {
                     setSheetState(() => itemIsSold = val);
@@ -795,12 +796,12 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                 tilePadding: EdgeInsets.zero,
                 shape: const Border(),
                 collapsedShape: const Border(),
-                title: const Text(
+                title: Text(
                   'További részletek és metaadatok',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.inkMuted,
+                    color: p.inkMuted,
                   ),
                 ),
                 children: [
@@ -1022,6 +1023,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Scaffold(
       appBar: AppBar(
         title: Text(_showingDuplicates ? 'Duplikátumok' : 'Készlet'),
@@ -1097,11 +1099,11 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                 child: SegmentedButton<InventorySaleStatusFilter>(
                   showSelectedIcon: false,
                   style: SegmentedButton.styleFrom(
-                    backgroundColor: AppColors.surface,
-                    selectedBackgroundColor: AppColors.terracottaSoft,
-                    selectedForegroundColor: AppColors.terracotta,
-                    foregroundColor: AppColors.inkMuted,
-                    side: const BorderSide(color: AppColors.border),
+                    backgroundColor: p.surface,
+                    selectedBackgroundColor: p.accentSoft,
+                    selectedForegroundColor: p.accent,
+                    foregroundColor: p.inkMuted,
+                    side: BorderSide(color: p.border),
                   ),
                   segments: const [
                     ButtonSegment(
@@ -1143,7 +1145,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                       padding: const EdgeInsets.all(8),
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: AppColors.brick,
+                          color: p.brick,
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: const Padding(
@@ -1170,15 +1172,15 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   child: Padding(
                     padding: const EdgeInsets.all(6),
                     child: Material(
-                      color: AppColors.surface.withValues(alpha: 0.92),
+                      color: p.surface.withValues(alpha: 0.92),
                       shape: const CircleBorder(),
                       child: IconButton(
                         visualDensity: VisualDensity.compact,
                         tooltip: 'Eladáshoz adás',
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.add_shopping_cart,
                           size: 19,
-                          color: AppColors.ink,
+                          color: p.ink,
                         ),
                         onPressed: () => _addToSale(item),
                       ),

@@ -53,12 +53,13 @@ class _InvitePasswordScreenState extends State<InvitePasswordScreen> {
 
   void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: AppColors.brick),
+      SnackBar(content: Text(message), backgroundColor: context.palette.brick),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final toggleButton = IconButton(
       tooltip: _obscurePassword ? 'Jelszó megjelenítése' : 'Jelszó elrejtése',
       onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
@@ -87,13 +88,13 @@ class _InvitePasswordScreenState extends State<InvitePasswordScreen> {
                         width: 56,
                         height: 56,
                         decoration: BoxDecoration(
-                          color: AppColors.terracottaSoft,
+                          color: p.accentSoft,
                           borderRadius: BorderRadius.circular(14),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.lock_reset,
                           size: 28,
-                          color: AppColors.terracotta,
+                          color: p.accent,
                         ),
                       ),
                     ),

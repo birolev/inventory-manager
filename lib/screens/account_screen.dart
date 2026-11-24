@@ -9,9 +9,11 @@ class AccountScreen extends StatefulWidget {
   const AccountScreen({
     super.key,
     this.statsGateway = const SupabaseEmployeeStatsGateway(),
+    this.themeController,
   });
 
   final EmployeeStatsGateway statsGateway;
+  final AppThemeController? themeController;
 
   @override
   State<AccountScreen> createState() => _AccountScreenState();
@@ -22,6 +24,9 @@ class _AccountScreenState extends State<AccountScreen> {
   bool _isLoadingStats = true;
   EmployeeStats? _stats;
   String? _statsError;
+
+  AppThemeController get _themeController =>
+      widget.themeController ?? AppThemeController.instance;
 
   @override
   void initState() {
@@ -51,6 +56,7 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Future<void> _signOut() async {
+    final p = context.palette;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -63,7 +69,10 @@ class _AccountScreenState extends State<AccountScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: AppColors.brick),
+            style: FilledButton.styleFrom(
+              backgroundColor: p.brick,
+              foregroundColor: Colors.white,
+            ),
             child: const Text('Kijelentkezés'),
           ),
         ],
@@ -83,7 +92,7 @@ class _AccountScreenState extends State<AccountScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Sikertelen kijelentkezés: $error'),
-          backgroundColor: AppColors.brick,
+          backgroundColor: context.palette.brick,
         ),
       );
     }
@@ -112,6 +121,8 @@ class _AccountScreenState extends State<AccountScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
+    final brightness = Theme.of(context).brightness;
     final user = Supabase.instance.client.auth.currentUser;
     final email = _stats?.email.isNotEmpty == true
         ? _stats!.email
@@ -163,8 +174,8 @@ class _AccountScreenState extends State<AccountScreen> {
                         children: [
                           CircleAvatar(
                             radius: 30,
-                            backgroundColor: AppColors.terracottaSoft,
-                            foregroundColor: AppColors.terracotta,
+                            backgroundColor: p.accentSoft,
+                            foregroundColor: p.accent,
                             child: Text(
                               initials,
                               style: const TextStyle(
@@ -186,7 +197,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                 Text(
                                   email,
                                   style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(color: AppColors.inkMuted),
+                                      ?.copyWith(color: p.inkMuted),
                                 ),
                                 const SizedBox(height: 8),
                                 Container(
@@ -195,14 +206,14 @@ class _AccountScreenState extends State<AccountScreen> {
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: AppColors.oliveSoft,
+                                    color: p.oliveSoft,
                                     borderRadius: BorderRadius.circular(20),
                                   ),
                                   child: Text(
                                     stats?.primaryRoleLabel ??
                                         'Aktív munkamenet',
-                                    style: const TextStyle(
-                                      color: AppColors.olive,
+                                    style: TextStyle(
+                                      color: p.olive,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -235,20 +246,17 @@ class _AccountScreenState extends State<AccountScreen> {
                   const SizedBox(height: 10),
                   if (_statsError != null && stats == null)
                     Card(
-                      color: AppColors.brickSoft,
+                      color: p.brickSoft,
                       child: Padding(
                         padding: const EdgeInsets.all(14),
                         child: Row(
                           children: [
-                            const Icon(
-                              Icons.error_outline,
-                              color: AppColors.brick,
-                            ),
+                            Icon(Icons.error_outline, color: p.brick),
                             const SizedBox(width: 10),
-                            const Expanded(
+                            Expanded(
                               child: Text(
                                 'Nem sikerült betölteni a statisztikákat.',
-                                style: TextStyle(color: AppColors.brick),
+                                style: TextStyle(color: p.brick),
                               ),
                             ),
                             TextButton(
@@ -262,8 +270,8 @@ class _AccountScreenState extends State<AccountScreen> {
                   else ...[
                     _StatRowTile(
                       icon: Icons.point_of_sale_outlined,
-                      accentColor: AppColors.olive,
-                      tintColor: AppColors.oliveSoft,
+                      accentColor: p.olive,
+                      tintColor: p.oliveSoft,
                       title: 'Eladások összesen',
                       subtitle: stats == null
                           ? 'Betöltés…'
@@ -275,8 +283,8 @@ class _AccountScreenState extends State<AccountScreen> {
                     const SizedBox(height: 10),
                     _StatRowTile(
                       icon: Icons.trending_up_rounded,
-                      accentColor: AppColors.terracotta,
-                      tintColor: AppColors.terracottaSoft,
+                      accentColor: p.accent,
+                      tintColor: p.accentSoft,
                       title: 'Napi átlagos eladás',
                       subtitle: stats == null
                           ? 'Betöltés…'
@@ -288,8 +296,8 @@ class _AccountScreenState extends State<AccountScreen> {
                     const SizedBox(height: 10),
                     _StatRowTile(
                       icon: Icons.checkroom_outlined,
-                      accentColor: AppColors.ink,
-                      tintColor: AppColors.surfaceMuted,
+                      accentColor: p.ink,
+                      tintColor: p.surfaceMuted,
                       title: 'Feltöltött termékek',
                       subtitle: 'Általad a készletbe felvett darabok',
                       value: stats == null
@@ -297,10 +305,10 @@ class _AccountScreenState extends State<AccountScreen> {
                           : '${stats.uploadedItemsCount} db',
                     ),
                     const SizedBox(height: 10),
-                    const _StatRowTile(
+                    _StatRowTile(
                       icon: Icons.star_outline_rounded,
-                      accentColor: AppColors.inkMuted,
-                      tintColor: AppColors.surfaceMuted,
+                      accentColor: p.inkMuted,
+                      tintColor: p.surfaceMuted,
                       title: 'Google értékelések',
                       subtitle: 'Hamarosan elérhető',
                       value: '—',
@@ -310,7 +318,7 @@ class _AccountScreenState extends State<AccountScreen> {
                     const SizedBox(height: 20),
                     Card(
                       clipBehavior: Clip.antiAlias,
-                      color: AppColors.terracottaSoft,
+                      color: p.accentSoft,
                       child: InkWell(
                         onTap: _openTeamStats,
                         child: Padding(
@@ -321,12 +329,12 @@ class _AccountScreenState extends State<AccountScreen> {
                                 width: 44,
                                 height: 44,
                                 decoration: BoxDecoration(
-                                  color: AppColors.surface,
+                                  color: p.surface,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.groups_outlined,
-                                  color: AppColors.terracotta,
+                                  color: p.accent,
                                 ),
                               ),
                               const SizedBox(width: 14),
@@ -339,35 +347,126 @@ class _AccountScreenState extends State<AccountScreen> {
                                       style: Theme.of(context)
                                           .textTheme
                                           .titleSmall
-                                          ?.copyWith(color: AppColors.ink),
+                                          ?.copyWith(color: p.ink),
                                     ),
                                     const SizedBox(height: 2),
-                                    const Text(
+                                    Text(
                                       'Minden munkatárs eladásai, napi átlaga és feltöltései',
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: AppColors.inkMuted,
+                                        color: p.inkMuted,
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                              const Icon(
-                                Icons.chevron_right,
-                                color: AppColors.terracotta,
-                              ),
+                              Icon(Icons.chevron_right, color: p.accent),
                             ],
                           ),
                         ),
                       ),
                     ),
                   ],
+                  const SizedBox(height: 24),
+                  Text(
+                    'Megjelenés',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 10),
+                  ListenableBuilder(
+                    listenable: _themeController,
+                    builder: (context, _) {
+                      return Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                'Sötét mód',
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              const SizedBox(height: 8),
+                              SegmentedButton<ThemeMode>(
+                                showSelectedIcon: false,
+                                style: SegmentedButton.styleFrom(
+                                  backgroundColor: p.surface,
+                                  selectedBackgroundColor: p.accentSoft,
+                                  selectedForegroundColor: p.accent,
+                                  foregroundColor: p.inkMuted,
+                                  side: BorderSide(color: p.border),
+                                ),
+                                segments: const [
+                                  ButtonSegment(
+                                    value: ThemeMode.light,
+                                    label: Text('Világos'),
+                                    icon: Icon(
+                                      Icons.light_mode_outlined,
+                                      size: 18,
+                                    ),
+                                  ),
+                                  ButtonSegment(
+                                    value: ThemeMode.dark,
+                                    label: Text('Sötét'),
+                                    icon: Icon(
+                                      Icons.dark_mode_outlined,
+                                      size: 18,
+                                    ),
+                                  ),
+                                  ButtonSegment(
+                                    value: ThemeMode.system,
+                                    label: Text('Rendszer'),
+                                  ),
+                                ],
+                                selected: {_themeController.themeMode},
+                                onSelectionChanged: (selection) {
+                                  if (selection.isEmpty) return;
+                                  _themeController.setThemeMode(
+                                    selection.first,
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Színséma előnézet',
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  for (
+                                    var i = 0;
+                                    i < AppColorSchemePreset.values.length;
+                                    i++
+                                  ) ...[
+                                    if (i > 0) const SizedBox(width: 8),
+                                    Expanded(
+                                      child: _ThemePresetPreviewCard(
+                                        preset: AppColorSchemePreset.values[i],
+                                        brightness: brightness,
+                                        selected:
+                                            _themeController.preset ==
+                                            AppColorSchemePreset.values[i],
+                                        onTap: () => _themeController.setPreset(
+                                          AppColorSchemePreset.values[i],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                   const SizedBox(height: 28),
                   OutlinedButton.icon(
                     onPressed: _isSigningOut ? null : _signOut,
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.brick,
-                      side: const BorderSide(color: AppColors.brick),
+                      foregroundColor: p.brick,
+                      side: BorderSide(color: p.brick),
                     ),
                     icon: _isSigningOut
                         ? const SizedBox(
@@ -383,6 +482,137 @@ class _AccountScreenState extends State<AccountScreen> {
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemePresetPreviewCard extends StatelessWidget {
+  const _ThemePresetPreviewCard({
+    required this.preset,
+    required this.brightness,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final AppColorSchemePreset preset;
+  final Brightness brightness;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = preset.paletteFor(brightness);
+    final activePalette = context.palette;
+
+    return Material(
+      color: preview.canvas,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? activePalette.accent : preview.borderStrong,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Miniature app bar + accent pill preview
+              Container(
+                height: 16,
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                decoration: BoxDecoration(
+                  color: preview.surface,
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(color: preview.border),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 24,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: preview.ink,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: preview.accent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 6),
+              // Miniature card tiles preview
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: preview.surface,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: preview.border),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Container(
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: preview.oliveSoft,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: preview.olive),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      preset.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: preview.ink,
+                      ),
+                    ),
+                  ),
+                  if (selected)
+                    Icon(
+                      Icons.check_circle,
+                      size: 15,
+                      color: activePalette.accent,
+                    ),
+                ],
+              ),
+              Text(
+                preset.subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 10, color: preview.inkMuted),
+              ),
+            ],
           ),
         ),
       ),
@@ -409,6 +639,7 @@ class _StatRowTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -437,11 +668,11 @@ class _StatRowTile extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
-                color: AppColors.ink,
-                fontFeatures: [FontFeature.tabularFigures()],
+                color: p.ink,
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ],
