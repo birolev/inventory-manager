@@ -3,6 +3,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
+import 'screens/invite_password_screen.dart';
 import 'theme/app_theme.dart';
 
 const _authDiagnosticsEnabled = bool.fromEnvironment(
@@ -10,26 +11,39 @@ const _authDiagnosticsEnabled = bool.fromEnvironment(
   defaultValue: false,
 );
 
-bool _openedFromSupabaseInvite(Uri uri) {
-  if (uri.queryParameters['type']?.toLowerCase() == 'invite') return true;
+PasswordSetupMode? _parsePasswordSetupType(String? rawType) {
+  return switch (rawType?.toLowerCase()) {
+    'invite' => PasswordSetupMode.invite,
+    'recovery' => PasswordSetupMode.recovery,
+    _ => null,
+  };
+}
+
+PasswordSetupMode? passwordSetupModeFromUri(Uri uri) {
+  final queryMode = _parsePasswordSetupType(uri.queryParameters['type']);
+  if (queryMode != null) return queryMode;
 
   // Supabase's implicit auth flow returns the auth parameters in the fragment.
   final fragment = uri.fragment;
-  if (fragment.isEmpty) return false;
+  if (fragment.isEmpty) return null;
   try {
-    final parameters = Uri.splitQueryString(fragment.replaceFirst('?', ''));
-    return parameters['type']?.toLowerCase() == 'invite';
+    final queryPart = fragment.contains('?')
+        ? fragment.substring(fragment.indexOf('?') + 1)
+        : fragment;
+    final parameters = Uri.splitQueryString(queryPart);
+    return _parsePasswordSetupType(parameters['type']);
   } on FormatException {
-    return false;
+    return null;
   }
 }
 
 Set<String> _fragmentParameterNames(Uri uri) {
   if (uri.fragment.isEmpty) return const {};
   try {
-    return Uri.splitQueryString(
-      uri.fragment.replaceFirst('?', ''),
-    ).keys.toSet();
+    final queryPart = uri.fragment.contains('?')
+        ? uri.fragment.substring(uri.fragment.indexOf('?') + 1)
+        : uri.fragment;
+    return Uri.splitQueryString(queryPart).keys.toSet();
   } on FormatException {
     return const {};
   }
@@ -43,9 +57,10 @@ void _logAuthCallback(Uri uri, {required String phase, bool? hasSession}) {
     ...uri.queryParameters.keys,
     ...fragmentParameterNames,
   };
+  final setupMode = passwordSetupModeFromUri(uri);
   final diagnostics = [
     'phase=$phase',
-    'invite=${_openedFromSupabaseInvite(uri)}',
+    'setupMode=${setupMode?.name ?? 'none'}',
     'hasCode=${parameterNames.contains('code')}',
     'hasToken=${parameterNames.contains('token') || parameterNames.contains('token_hash')}',
     'hasAccessToken=${parameterNames.contains('access_token')}',
@@ -74,7 +89,7 @@ void main() async {
   }
 
   final callbackUri = Uri.base;
-  final openedFromInvite = _openedFromSupabaseInvite(callbackUri);
+  final initialPasswordSetupMode = passwordSetupModeFromUri(callbackUri);
   _logAuthCallback(callbackUri, phase: 'beforeInitialize');
   await Supabase.initialize(
     url: supabaseUrl,
@@ -99,5 +114,5 @@ void main() async {
   }
 
   await AppThemeController.instance.load();
-  runApp(YoaronApp(openedFromInvite: openedFromInvite));
+  runApp(YoaronApp(initialPasswordSetupMode: initialPasswordSetupMode));
 }

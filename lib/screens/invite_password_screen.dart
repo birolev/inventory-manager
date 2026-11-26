@@ -3,10 +3,17 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../theme/app_theme.dart';
 
+enum PasswordSetupMode { invite, recovery }
+
 class InvitePasswordScreen extends StatefulWidget {
-  const InvitePasswordScreen({required this.onPasswordChanged, super.key});
+  const InvitePasswordScreen({
+    required this.onPasswordChanged,
+    this.mode = PasswordSetupMode.invite,
+    super.key,
+  });
 
   final VoidCallback onPasswordChanged;
+  final PasswordSetupMode mode;
 
   @override
   State<InvitePasswordScreen> createState() => _InvitePasswordScreenState();
@@ -100,13 +107,17 @@ class _InvitePasswordScreenState extends State<InvitePasswordScreen> {
                     ),
                     const SizedBox(height: 18),
                     Text(
-                      'Jelszó beállítása',
+                      widget.mode == PasswordSetupMode.recovery
+                          ? 'Új jelszó beállítása'
+                          : 'Jelszó beállítása',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.headlineSmall,
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Adj meg egy jelszót a meghívott fiókodhoz a folytatáshoz.',
+                      widget.mode == PasswordSetupMode.recovery
+                          ? 'Adj meg egy új jelszót a fiókodhoz a folytatáshoz.'
+                          : 'Adj meg egy jelszót a meghívott fiókodhoz a folytatáshoz.',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
