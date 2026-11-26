@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yoaron_app/main.dart';
 import 'package:yoaron_app/screens/invite_password_screen.dart';
+import 'package:yoaron_app/screens/login_screen.dart';
 import 'package:yoaron_app/theme/app_theme.dart';
 
 void main() {
@@ -76,12 +77,15 @@ void main() {
       );
     });
 
-    testWidgets('shows recovery copy when in recovery mode', (tester) async {
+    testWidgets('shows recovery copy and read-only email for autofill', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light(),
           home: InvitePasswordScreen(
             mode: PasswordSetupMode.recovery,
+            email: 'staff@yoaron.hu',
             onPasswordChanged: () {},
           ),
         ),
@@ -92,6 +96,41 @@ void main() {
         find.text('Adj meg egy új jelszót a fiókodhoz a folytatáshoz.'),
         findsOneWidget,
       );
+      expect(find.byType(AutofillGroup), findsOneWidget);
+
+      final textFields = tester
+          .widgetList<TextField>(find.byType(TextField))
+          .toList();
+      expect(textFields, hasLength(3));
+      expect(textFields[0].readOnly, isTrue);
+      expect(textFields[0].controller?.text, 'staff@yoaron.hu');
+      expect(
+        textFields[0].autofillHints,
+        containsAll([AutofillHints.username, AutofillHints.email]),
+      );
+      expect(textFields[1].autofillHints, contains(AutofillHints.newPassword));
+      expect(textFields[2].autofillHints, contains(AutofillHints.newPassword));
+    });
+  });
+
+  group('LoginScreen autofill', () {
+    testWidgets('wraps email and password fields in AutofillGroup', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(theme: AppTheme.light(), home: const LoginScreen()),
+      );
+
+      expect(find.byType(AutofillGroup), findsOneWidget);
+      final textFields = tester
+          .widgetList<TextField>(find.byType(TextField))
+          .toList();
+      expect(textFields, hasLength(2));
+      expect(
+        textFields[0].autofillHints,
+        containsAll([AutofillHints.username, AutofillHints.email]),
+      );
+      expect(textFields[1].autofillHints, contains(AutofillHints.password));
     });
   });
 }

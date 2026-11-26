@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../theme/app_theme.dart';
@@ -9,24 +10,36 @@ class InvitePasswordScreen extends StatefulWidget {
   const InvitePasswordScreen({
     required this.onPasswordChanged,
     this.mode = PasswordSetupMode.invite,
+    this.email,
     super.key,
   });
 
   final VoidCallback onPasswordChanged;
   final PasswordSetupMode mode;
+  final String? email;
 
   @override
   State<InvitePasswordScreen> createState() => _InvitePasswordScreenState();
 }
 
 class _InvitePasswordScreenState extends State<InvitePasswordScreen> {
+  late final _emailController = TextEditingController(text: widget.email ?? '');
   final _passwordController = TextEditingController();
   final _confirmationController = TextEditingController();
   bool _isSaving = false;
   bool _obscurePassword = true;
 
   @override
+  void didUpdateWidget(covariant InvitePasswordScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.email != oldWidget.email) {
+      _emailController.text = widget.email ?? '';
+    }
+  }
+
+  @override
   void dispose() {
+    _emailController.dispose();
     _passwordController.dispose();
     _confirmationController.dispose();
     super.dispose();
@@ -48,6 +61,7 @@ class _InvitePasswordScreenState extends State<InvitePasswordScreen> {
       await Supabase.instance.client.auth.updateUser(
         UserAttributes(password: password),
       );
+      TextInput.finishAutofillContext();
       if (mounted) widget.onPasswordChanged();
     } on AuthException catch (error) {
       if (mounted) _showMessage(error.message);
@@ -122,29 +136,54 @@ class _InvitePasswordScreenState extends State<InvitePasswordScreen> {
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: 24),
-                    TextField(
-                      controller: _passwordController,
-                      obscureText: _obscurePassword,
-                      textInputAction: TextInputAction.next,
-                      autofillHints: const [AutofillHints.newPassword],
-                      decoration: InputDecoration(
-                        labelText: 'Új jelszó',
-                        helperText: 'Legalább 8 karakter',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        suffixIcon: toggleButton,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: _confirmationController,
-                      obscureText: _obscurePassword,
-                      textInputAction: TextInputAction.done,
-                      autofillHints: const [AutofillHints.newPassword],
-                      onSubmitted: (_) => _isSaving ? null : _savePassword(),
-                      decoration: InputDecoration(
-                        labelText: 'Új jelszó megerősítése',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        suffixIcon: toggleButton,
+                    AutofillGroup(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (widget.email != null &&
+                              widget.email!.trim().isNotEmpty) ...[
+                            TextField(
+                              controller: _emailController,
+                              readOnly: true,
+                              keyboardType: TextInputType.emailAddress,
+                              autofillHints: const [
+                                AutofillHints.username,
+                                AutofillHints.email,
+                              ],
+                              decoration: const InputDecoration(
+                                labelText: 'E-mail cím',
+                                prefixIcon: Icon(Icons.email_outlined),
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                          TextField(
+                            controller: _passwordController,
+                            obscureText: _obscurePassword,
+                            textInputAction: TextInputAction.next,
+                            autofillHints: const [AutofillHints.newPassword],
+                            decoration: InputDecoration(
+                              labelText: 'Új jelszó',
+                              helperText: 'Legalább 8 karakter',
+                              prefixIcon: const Icon(Icons.lock_outline),
+                              suffixIcon: toggleButton,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: _confirmationController,
+                            obscureText: _obscurePassword,
+                            textInputAction: TextInputAction.done,
+                            autofillHints: const [AutofillHints.newPassword],
+                            onSubmitted: (_) =>
+                                _isSaving ? null : _savePassword(),
+                            decoration: InputDecoration(
+                              labelText: 'Új jelszó megerősítése',
+                              prefixIcon: const Icon(Icons.lock_outline),
+                              suffixIcon: toggleButton,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 24),

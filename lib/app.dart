@@ -62,14 +62,16 @@ class _YoaronAppState extends State<YoaronApp> {
       builder: (context, _) {
         final home = switch ((_currentSession, _pendingPasswordSetupMode)) {
           (null, _) => const LoginScreen(),
-          (_, final PasswordSetupMode mode) => InvitePasswordScreen(
-            mode: mode,
-            onPasswordChanged: () {
-              if (mounted) {
-                setState(() => _pendingPasswordSetupMode = null);
-              }
-            },
-          ),
+          (final Session session, final PasswordSetupMode mode) =>
+            InvitePasswordScreen(
+              mode: mode,
+              email: session.user.email,
+              onPasswordChanged: () {
+                if (mounted) {
+                  setState(() => _pendingPasswordSetupMode = null);
+                }
+              },
+            ),
           _ => const MainShell(),
         };
 
